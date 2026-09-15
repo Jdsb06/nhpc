@@ -1,0 +1,79 @@
+allocated nodes:
+compute00.local
+compute01.local
+running on: compute00.local
+
+--- Memory Registration Benchmark ---
+Size: 1      bytes | Reg Latency: 78822.00   ns | Dereg Latency: 28886.00 ns
+Size: 2      bytes | Reg Latency: 22375.00   ns | Dereg Latency: 11712.00 ns
+Size: 4      bytes | Reg Latency: 16344.00   ns | Dereg Latency: 11378.00 ns
+Size: 8      bytes | Reg Latency: 16688.00   ns | Dereg Latency: 12978.00 ns
+Size: 16     bytes | Reg Latency: 17076.00   ns | Dereg Latency: 14739.00 ns
+Size: 32     bytes | Reg Latency: 17008.00   ns | Dereg Latency: 14406.00 ns
+Size: 64     bytes | Reg Latency: 20487.00   ns | Dereg Latency: 11465.00 ns
+Size: 128    bytes | Reg Latency: 17139.00   ns | Dereg Latency: 17270.00 ns
+Size: 256    bytes | Reg Latency: 17160.00   ns | Dereg Latency: 10434.00 ns
+Size: 512    bytes | Reg Latency: 17067.00   ns | Dereg Latency: 9720.00 ns
+Size: 1024   bytes | Reg Latency: 17029.00   ns | Dereg Latency: 9955.00 ns
+Size: 2048   bytes | Reg Latency: 18264.00   ns | Dereg Latency: 9545.00 ns
+Size: 4096   bytes | Reg Latency: 16267.00   ns | Dereg Latency: 9525.00 ns
+Size: 8192   bytes | Reg Latency: 20690.00   ns | Dereg Latency: 10632.00 ns
+Size: 16384  bytes | Reg Latency: 23196.00   ns | Dereg Latency: 12118.00 ns
+Size: 32768  bytes | Reg Latency: 28751.00   ns | Dereg Latency: 13902.00 ns
+Size: 65536  bytes | Reg Latency: 42912.00   ns | Dereg Latency: 14265.00 ns
+Size: 131072 bytes | Reg Latency: 166501.00  ns | Dereg Latency: 26955.00 ns
+Size: 262144 bytes | Reg Latency: 253175.00  ns | Dereg Latency: 54951.00 ns
+Size: 524288 bytes | Reg Latency: 436020.00  ns | Dereg Latency: 62942.00 ns
+Size: 1048576 bytes | Reg Latency: 950938.00  ns | Dereg Latency: 140130.00 ns
+Size: 2097152 bytes | Reg Latency: 2614703.00 ns | Dereg Latency: 245836.00 ns
+Size: 4194304 bytes | Reg Latency: 2241167.00 ns | Dereg Latency: 203501.00 ns
+
+--- Task 1: Verbs Send/Recv (Channel Semantics) ---
+Size: 1      bytes | Latency: 2400.00 ns
+Size: 2      bytes | Latency: 2150.00 ns
+Size: 4      bytes | Latency: 2064.50 ns
+Size: 8      bytes | Latency: 2063.50 ns
+Size: 16     bytes | Latency: 2059.50 ns
+Size: 32     bytes | Latency: 2099.00 ns
+Size: 64     bytes | Latency: 2073.00 ns
+Size: 128    bytes | Latency: 2248.50 ns
+Size: 256    bytes | Latency: 2243.00 ns
+Size: 512    bytes | Latency: 2575.50 ns
+Size: 1024   bytes | Latency: 2785.00 ns
+Size: 2048   bytes | Latency: 3779.00 ns
+Size: 4096   bytes | Latency: 4735.50 ns
+Size: 8192   bytes | Latency: 4586.00 ns
+Size: 16384  bytes | Latency: 5831.00 ns
+Size: 32768  bytes | Latency: 8179.00 ns
+Size: 65536  bytes | Latency: 13044.50 ns
+Size: 131072 bytes | Latency: 25935.50 ns
+Size: 262144 bytes | Latency: 46208.00 ns
+Size: 524288 bytes | Latency: 88561.50 ns
+Size: 1048576 bytes | Latency: 174135.00 ns
+Size: 2097152 bytes | Latency: 354221.00 ns
+Size: 4194304 bytes | Latency: 714947.50 ns
+
+--- Task 2: RDMA Write with Immediate ---
+Size: 1      bytes | Latency: 3655.50 ns
+Size: 2      bytes | Latency: 3394.00 ns
+Size: 4      bytes | Latency: 2779.00 ns
+Size: 8      bytes | Latency: 2620.50 ns
+Size: 16     bytes | Latency: 2145.50 ns
+Size: 32     bytes | Latency: 2254.50 ns
+Size: 64     bytes | Latency: 1936.00 ns
+Size: 128    bytes | Latency: 2546.50 ns
+Size: 256    bytes | Latency: 2816.50 ns
+Size: 512    bytes | Latency: 2361.00 ns
+Size: 1024   bytes | Latency: 2474.50 ns
+Size: 2048   bytes | Latency: 7732.50 ns
+Size: 4096   bytes | Latency: 3923.50 ns
+Size: 8192   bytes | Latency: 5003.00 ns
+Size: 16384  bytes | Latency: 7066.00 ns
+Size: 32768  bytes | Latency: 9480.50 ns
+Size: 65536  bytes | Latency: 14802.50 ns
+Size: 131072 bytes | Latency: 28236.00 ns
+Size: 262144 bytes | Latency: 58880.50 ns
+Size: 524288 bytes | Latency: 112955.50 ns
+Size: 1048576 bytes | Latency: 224284.50 ns
+Size: 2097152 bytes | Latency: 462489.50 ns
+Size: 4194304 bytes | Latency: 825517.50 ns

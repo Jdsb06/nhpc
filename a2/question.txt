@@ -1,0 +1,10 @@
+RDMA benchmark
+Dear students - This assignment is an extension to the previous one and lets stick to TCP latency for now. Please add the capability to do the following:
+
+1. Verbs send/recv also known as channel semantics and report the latency
+2. RDMA write with immediate and report the latency
+3. Memory registration latency for each message size
+4. Memory deregistation latency for each message size
+
+Please ensure your output is similar to TCP benchmark and in a tabular form so that we can compare the time it takes for TCP and each of the above operations.
+NOTE: Memory registration makes sense for memory pages which is typically 4KB. So, even if you send few bytes, you still need register an entire page.
