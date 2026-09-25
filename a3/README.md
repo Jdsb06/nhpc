@@ -2,7 +2,7 @@
 
 ## 📌 Overview
 
-This assignment evaluates two InfiniBand RDMA communication protocols—**Eager Protocol** and **Rendezvous Protocol**—implemented via InfiniBand Verbs (`libverbs`), and compares their latency performance against the **Unmodified MPI Latency Benchmark** (`mpi-latency.c`) across two dedicated cluster nodes for message sizes ranging from **1 byte to 4 Megabytes (4,194,304 bytes)**.
+This assignment evaluates two InfiniBand RDMA communication protocols—**Eager Protocol** and **Rendezvous Protocol**—implemented via InfiniBand Verbs (`libverbs`), and compares their latency performance against the **Unmodified MPI Latency Benchmark** (`mpi-latency.c`) across two dedicated cluster nodes for message sizes ranging from **1 B to 4 MB**.
 
 ---
 
@@ -124,19 +124,19 @@ Executed across nodes **`compute00.local`** and **`compute01.local`** over Infin
 | **128 B**    | 100        | 2.73 µs                             | **2.23 µs**                              | **3.12 µs**                              |
 | **256 B**    | 100        | 2.79 µs                             | 46.28 µs                                 | **2.85 µs**                              |
 | **512 B**    | 100        | 2.92 µs                             | **2.58 µs**                              | 37.22 µs                                 |
-| **1024 B**   | 100        | 3.31 µs                             | **2.69 µs**                              | 49.26 µs                                 |
-| **2048 B**   | 100        | 5.30 µs                             | **3.15 µs**                              | 5.65 µs                                  |
-| **4096 B**   | 100        | 6.13 µs                             | 7.29 µs                                  | **5.51 µs**                              |
-| **8192 B**   | 100        | 8.23 µs                             | 9.10 µs                                  | **6.76 µs**                              |
-| **16384 B**  | 100        | 12.10 µs                            | 10.01 µs                                 | **8.46 µs**                              |
-| **32768 B**  | 100        | 19.91 µs                            | 16.96 µs                                 | **12.90 µs**                             |
-| **65536 B**  | 100        | 37.52 µs                            | 184.97 µs                                | **24.56 µs**                             |
-| **131072 B** | 100        | 81.91 µs                            | 107.52 µs                                | **59.50 µs**                             |
-| **262144 B** | 100        | 3,462.93 µs *(3.46 ms)*             | 329.50 µs *(0.33 ms)*                    | **162.26 µs *(0.16 ms)***                |
-| **524288 B** | 100        | 6,533.14 µs *(6.53 ms)*             | 776.57 µs *(0.78 ms)*                    | **457.20 µs *(0.46 ms)***                |
-| **1048576 B**| 100        | 11,963.50 µs *(11.96 ms)*           | 1,703.65 µs *(1.70 ms)*                  | **407.31 µs *(0.41 ms)***                |
-| **2097152 B**| 100        | 23,351.18 µs *(23.35 ms)*           | 3,570.71 µs *(3.57 ms)*                  | **972.95 µs *(0.97 ms)***                |
-| **4194304 B**| 100        | 41,216.15 µs *(41.22 ms)*           | **3,961.11 µs *(3.96 ms)***              | 4,109.69 µs *(4.11 ms)*                  |
+| **1 KB**     | 100        | 3.31 µs                             | **2.69 µs**                              | 49.26 µs                                 |
+| **2 KB**     | 100        | 5.30 µs                             | **3.15 µs**                              | 5.65 µs                                  |
+| **4 KB**     | 100        | 6.13 µs                             | 7.29 µs                                  | **5.51 µs**                              |
+| **8 KB**     | 100        | 8.23 µs                             | 9.10 µs                                  | **6.76 µs**                              |
+| **16 KB**    | 100        | 12.10 µs                            | 10.01 µs                                 | **8.46 µs**                              |
+| **32 KB**    | 100        | 19.91 µs                            | 16.96 µs                                 | **12.90 µs**                             |
+| **64 KB**    | 100        | 37.52 µs                            | 184.97 µs                                | **24.56 µs**                             |
+| **128 KB**   | 100        | 81.91 µs                            | 107.52 µs                                | **59.50 µs**                             |
+| **256 KB**   | 100        | 3,462.93 µs *(3.46 ms)*             | 329.50 µs *(0.33 ms)*                    | **162.26 µs *(0.16 ms)***                |
+| **512 KB**   | 100        | 6,533.14 µs *(6.53 ms)*             | 776.57 µs *(0.78 ms)*                    | **457.20 µs *(0.46 ms)***                |
+| **1 MB**     | 100        | 11,963.50 µs *(11.96 ms)*           | 1,703.65 µs *(1.70 ms)*                  | **407.31 µs *(0.41 ms)***                |
+| **2 MB**     | 100        | 23,351.18 µs *(23.35 ms)*           | 3,570.71 µs *(3.57 ms)*                  | **972.95 µs *(0.97 ms)***                |
+| **4 MB**     | 100        | 41,216.15 µs *(41.22 ms)*           | **3,961.11 µs *(3.96 ms)***              | 4,109.69 µs *(4.11 ms)*                  |
 
 ---
 
