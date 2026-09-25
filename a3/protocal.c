@@ -8,9 +8,9 @@
 #include <sys/time.h>
 
 #define IB_PORT 1
-#define PA_BUFFER_SIZE (128 * 1024)       // 128 KB chunk size for Eager protocol
-#define MAX_DATA_TEST (4 * 1024 * 1024)   // 4 MB max buffer size
-#define ITERATIONS 100                     // Number of iterations per message size
+#define PA_BUFFER_SIZE (128 * 1024)       // 128 KB preallocated buffer chunk size for Eager
+#define MAX_DATA_TEST (4 * 1024 * 1024)   // 4 MB max buffer size for Rendezvous
+#define ITERATIONS 100                     // Iterations per message size
 #define WARMUP 10                          // Warmup iterations
 
 enum transfer_mode {
@@ -291,6 +291,21 @@ void myverbs_destroy(struct rdma_context *ctx) {
     free(ctx);
 }
 
+// =========================================================================
+// PRE-POSTING & NON-RNR RECEIVE MECHANISM
+// =========================================================================
+
+// 1. Pre-post receive buffer to network card (Eager Protocol)
+void myverbs_prepost_recv_eager(struct rdma_context* ctx, int size) {
+    int chunk = (size > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : size;
+    post_receive(ctx->qp, ctx->mr, ctx->buf, chunk);
+}
+
+// 2. Pre-post receive buffer to network card (Rendezvous Protocol)
+void myverbs_prepost_recv_rendezvous(struct rdma_context* ctx) {
+    post_receive(ctx->qp, ctx->mr, ctx->buf, 0); // 0 payload bytes needed for RDMA Write notification
+}
+
 // Task 1: Eager Protocol Send
 void myverbs_send_eager(struct rdma_context* ctx, const void *buf, int size) {
     int bytes_sent = 0;
@@ -305,13 +320,16 @@ void myverbs_send_eager(struct rdma_context* ctx, const void *buf, int size) {
     }
 }
 
-// Task 1: Eager Protocol Recv
-void myverbs_recv_eager(struct rdma_context* ctx, void *buf, int size) {
+// Task 1: Eager Protocol Recv (Wait & Collect)
+void myverbs_wait_recv_eager(struct rdma_context* ctx, void *buf, int size) {
     int bytes_rcv = 0;
     char *ptr = (char *)buf;
     while (bytes_rcv < size) {
         int chunk = (size - bytes_rcv > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - bytes_rcv);
-        post_receive(ctx->qp, ctx->mr, ctx->buf, chunk);
+        // For chunks beyond the first pre-posted chunk in multi-chunk transfers, post receive before polling
+        if (bytes_rcv > 0) {
+            post_receive(ctx->qp, ctx->mr, ctx->buf, chunk);
+        }
         poll_completion(ctx->cq);
         memcpy(ptr + bytes_rcv, ctx->buf, chunk);
         bytes_rcv += chunk;
@@ -327,9 +345,8 @@ void myverbs_send_rendezvous(struct rdma_context* ctx, const void *buf, int size
     poll_completion(ctx->cq);
 }
 
-// Task 2: Rendezvous Protocol Recv
-void myverbs_recv_rendezvous(struct rdma_context* ctx, void *buf, int size) {
-    post_receive(ctx->qp, ctx->mr, ctx->buf, 0);
+// Task 2: Rendezvous Protocol Recv (Wait & Collect)
+void myverbs_wait_recv_rendezvous(struct rdma_context* ctx, void *buf, int size) {
     poll_completion(ctx->cq);
     if (buf != ctx->buf) {
         memcpy(buf, ctx->buf, size);
@@ -355,26 +372,48 @@ void run_task1_eager(int rank, struct rdma_context *ctx) {
 
     struct timeval start, end;
     for (int size = 1; size <= MAX_DATA_TEST; size *= 2) {
-        // Warmup iterations
+        // Warmup iterations with pre-posting
+        myverbs_prepost_recv_eager(ctx, size);
+        MPI_Barrier(MPI_COMM_WORLD);
         for (int i = 0; i < WARMUP; i++) {
             if (rank == 0) {
                 myverbs_send_eager(ctx, user_buff, size);
-                myverbs_recv_eager(ctx, user_buff, size);
+                myverbs_wait_recv_eager(ctx, user_buff, size);
+                if (i < WARMUP - 1) myverbs_prepost_recv_eager(ctx, size);
             } else if (rank == 1) {
-                myverbs_recv_eager(ctx, user_buff, size);
+                myverbs_wait_recv_eager(ctx, user_buff, size);
+                if (i < WARMUP - 1) myverbs_prepost_recv_eager(ctx, size);
                 myverbs_send_eager(ctx, user_buff, size);
             }
         }
 
+        // Benchmark iterations with pre-posting
+        myverbs_prepost_recv_eager(ctx, size);
         MPI_Barrier(MPI_COMM_WORLD);
         gettimeofday(&start, NULL);
 
         for (int i = 0; i < ITERATIONS; i++) {
             if (rank == 0) {
+                // Rank 0 sends Ping
                 myverbs_send_eager(ctx, user_buff, size);
-                myverbs_recv_eager(ctx, user_buff, size);
+
+                // Rank 0 waits for Pong
+                myverbs_wait_recv_eager(ctx, user_buff, size);
+
+                // Pre-post RX buffer for NEXT iteration's Pong
+                if (i < ITERATIONS - 1) {
+                    myverbs_prepost_recv_eager(ctx, size);
+                }
             } else if (rank == 1) {
-                myverbs_recv_eager(ctx, user_buff, size);
+                // Rank 1 waits for Ping
+                myverbs_wait_recv_eager(ctx, user_buff, size);
+
+                // Pre-post RX buffer for NEXT iteration's Ping (BEFORE sending Pong!)
+                if (i < ITERATIONS - 1) {
+                    myverbs_prepost_recv_eager(ctx, size);
+                }
+
+                // Rank 1 sends Pong
                 myverbs_send_eager(ctx, user_buff, size);
             }
         }
@@ -409,26 +448,48 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
 
     struct timeval start, end;
     for (int size = 1; size <= MAX_DATA_TEST; size *= 2) {
-        // Warmup iterations
+        // Warmup iterations with pre-posting
+        myverbs_prepost_recv_rendezvous(ctx);
+        MPI_Barrier(MPI_COMM_WORLD);
         for (int i = 0; i < WARMUP; i++) {
             if (rank == 0) {
                 myverbs_send_rendezvous(ctx, user_buff, size);
-                myverbs_recv_rendezvous(ctx, user_buff, size);
+                myverbs_wait_recv_rendezvous(ctx, user_buff, size);
+                if (i < WARMUP - 1) myverbs_prepost_recv_rendezvous(ctx);
             } else if (rank == 1) {
-                myverbs_recv_rendezvous(ctx, user_buff, size);
+                myverbs_wait_recv_rendezvous(ctx, user_buff, size);
+                if (i < WARMUP - 1) myverbs_prepost_recv_rendezvous(ctx);
                 myverbs_send_rendezvous(ctx, user_buff, size);
             }
         }
 
+        // Benchmark iterations with pre-posting
+        myverbs_prepost_recv_rendezvous(ctx);
         MPI_Barrier(MPI_COMM_WORLD);
         gettimeofday(&start, NULL);
 
         for (int i = 0; i < ITERATIONS; i++) {
             if (rank == 0) {
+                // Rank 0 sends Ping
                 myverbs_send_rendezvous(ctx, user_buff, size);
-                myverbs_recv_rendezvous(ctx, user_buff, size);
+
+                // Rank 0 waits for Pong
+                myverbs_wait_recv_rendezvous(ctx, user_buff, size);
+
+                // Pre-post RX buffer for NEXT iteration's Pong
+                if (i < ITERATIONS - 1) {
+                    myverbs_prepost_recv_rendezvous(ctx);
+                }
             } else if (rank == 1) {
-                myverbs_recv_rendezvous(ctx, user_buff, size);
+                // Rank 1 waits for Ping
+                myverbs_wait_recv_rendezvous(ctx, user_buff, size);
+
+                // Pre-post RX buffer for NEXT iteration's Ping (BEFORE sending Pong!)
+                if (i < ITERATIONS - 1) {
+                    myverbs_prepost_recv_rendezvous(ctx);
+                }
+
+                // Rank 1 sends Pong
                 myverbs_send_rendezvous(ctx, user_buff, size);
             }
         }
