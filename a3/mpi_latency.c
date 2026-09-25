@@ -38,8 +38,8 @@ int main(int argc, char **argv) {
      exit(1);
   }
 
-  // Warmup iterations
-  for (msg_size = 4096; msg_size <= MAX_SIZE; msg_size *= 2) {
+  // Warmup iterations starting from 1 byte
+  for (msg_size = 1; msg_size <= MAX_SIZE; msg_size *= 2) {
     for (i = 0; i < WARMUP; i++) {
        if (rank == src_rank) {
          MPI_Send(src, msg_size, MPI_CHAR, dst_rank, 1, MPI_COMM_WORLD);
@@ -51,8 +51,8 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Measured Benchmark iterations
-  for (msg_size = 4096; msg_size <= MAX_SIZE; msg_size *= 2) {
+  // Measured Benchmark iterations starting from 1 byte
+  for (msg_size = 1; msg_size <= MAX_SIZE; msg_size *= 2) {
     MPI_Barrier(MPI_COMM_WORLD);
 
     gettimeofday(&start, NULL);
