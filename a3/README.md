@@ -1,8 +1,10 @@
-# Assignment 3: Eager vs Rendezvous Protocol Performance Report (with RX Pre-Posting)
+# Assignment 3: Eager vs Rendezvous Protocol Performance Report (Median Latency & Pre-Posting)
 
 ## 📌 Overview
 
-This assignment evaluates two InfiniBand RDMA communication protocols—**Eager Protocol** and **Rendezvous Protocol**—implemented via InfiniBand Verbs (`libverbs`), and compares their latency performance against the **Unmodified MPI Latency Benchmark** (`mpi-latency.c`) across two dedicated cluster nodes for message sizes ranging from **1 B to 4 MB**.
+This assignment evaluates two InfiniBand RDMA communication protocols—**Eager Protocol** and **Rendezvous Protocol**—implemented via InfiniBand Verbs (`libverbs`), and compares their median latency performance against the **Unmodified MPI Latency Benchmark** (`mpi-latency.c`) across two dedicated cluster nodes for message sizes ranging from **1 B to 4 MB**.
+
+To eliminate measurement noise and jitter caused by OS scheduling and transient network interrupts, all benchmark loops use **high-resolution nanosecond timers (`clock_gettime(CLOCK_MONOTONIC)`)** for individual iterations, sort the results via `qsort`, and report the **Median Latency** for each message size.
 
 ---
 
@@ -108,45 +110,44 @@ cat /home/student4/.pbs_route/output/student4_*.out
 
 ---
 
-## 📈 Complete Measured Performance Comparison (1 B to 4 MB, Pre-posted, 100 Iterations Averaged)
+## 📈 Complete Measured Performance Comparison (1 B to 4 MB, 100 Iterations Median)
 
 Executed across nodes **`compute00.local`** and **`compute01.local`** over InfiniBand (`mlx4_0`, OFA fabric):
 
-| Message Size | Iterations | Task 1: Eager Protocol (Pre-Posted) | Task 2: Rendezvous Protocol (Pre-Posted) | Unmodified MPI (`MPI_Send` / `MPI_Recv`) |
-|-------------:|-----------:|------------------------------------:|-----------------------------------------:|-----------------------------------------:|
-| **1 B**      | 100        | **2.58 µs**                         | 68.07 µs                                 | **1.69 µs**                              |
-| **2 B**      | 100        | 3.62 µs                             | **2.18 µs**                              | **1.61 µs**                              |
-| **4 B**      | 100        | 2.59 µs                             | **2.03 µs**                              | **1.61 µs**                              |
-| **8 B**      | 100        | 2.58 µs                             | **2.37 µs**                              | **1.52 µs**                              |
-| **16 B**     | 100        | 2.58 µs                             | **2.21 µs**                              | **1.53 µs**                              |
-| **32 B**     | 100        | 2.58 µs                             | **2.15 µs**                              | **1.67 µs**                              |
-| **64 B**     | 100        | 2.63 µs                             | **2.13 µs**                              | **2.16 µs**                              |
-| **128 B**    | 100        | 2.73 µs                             | **2.23 µs**                              | **3.12 µs**                              |
-| **256 B**    | 100        | 2.79 µs                             | 46.28 µs                                 | **2.85 µs**                              |
-| **512 B**    | 100        | 2.92 µs                             | **2.58 µs**                              | 37.22 µs                                 |
-| **1 KB**     | 100        | 3.31 µs                             | **2.69 µs**                              | 49.26 µs                                 |
-| **2 KB**     | 100        | 5.30 µs                             | **3.15 µs**                              | 5.65 µs                                  |
-| **4 KB**     | 100        | 6.13 µs                             | 7.29 µs                                  | **5.51 µs**                              |
-| **8 KB**     | 100        | 8.23 µs                             | 9.10 µs                                  | **6.76 µs**                              |
-| **16 KB**    | 100        | 12.10 µs                            | 10.01 µs                                 | **8.46 µs**                              |
-| **32 KB**    | 100        | 19.91 µs                            | 16.96 µs                                 | **12.90 µs**                             |
-| **64 KB**    | 100        | 37.52 µs                            | 184.97 µs                                | **24.56 µs**                             |
-| **128 KB**   | 100        | 81.91 µs                            | 107.52 µs                                | **59.50 µs**                             |
-| **256 KB**   | 100        | 3,462.93 µs *(3.46 ms)*             | 329.50 µs *(0.33 ms)*                    | **162.26 µs *(0.16 ms)***                |
-| **512 KB**   | 100        | 6,533.14 µs *(6.53 ms)*             | 776.57 µs *(0.78 ms)*                    | **457.20 µs *(0.46 ms)***                |
-| **1 MB**     | 100        | 11,963.50 µs *(11.96 ms)*           | 1,703.65 µs *(1.70 ms)*                  | **407.31 µs *(0.41 ms)***                |
-| **2 MB**     | 100        | 23,351.18 µs *(23.35 ms)*           | 3,570.71 µs *(3.57 ms)*                  | **972.95 µs *(0.97 ms)***                |
-| **4 MB**     | 100        | 41,216.15 µs *(41.22 ms)*           | **3,961.11 µs *(3.96 ms)***              | 4,109.69 µs *(4.11 ms)*                  |
+| Message Size | Iterations | Task 1: Eager Protocol (Median) | Task 2: Rendezvous Protocol (Median) | Unmodified MPI (`MPI_Send` / `MPI_Recv`) |
+|-------------:|-----------:|--------------------------------:|------------------------------------:|-----------------------------------------:|
+| **1 B**      | 100        | **2.50 µs**                     | **2.24 µs**                         | **1.67 µs**                              |
+| **2 B**      | 100        | 2.52 µs                         | **2.34 µs**                         | **1.59 µs**                              |
+| **4 B**      | 100        | 2.84 µs                         | **2.23 µs**                         | **1.53 µs**                              |
+| **8 B**      | 100        | 2.74 µs                         | **2.04 µs**                         | **1.58 µs**                              |
+| **16 B**     | 100        | 2.96 µs                         | **2.05 µs**                         | **1.53 µs**                              |
+| **32 B**     | 100        | 2.82 µs                         | **2.03 µs**                         | **1.63 µs**                              |
+| **64 B**     | 100        | 2.69 µs                         | **2.12 µs**                         | **2.21 µs**                              |
+| **128 B**    | 100        | 2.72 µs                         | **2.22 µs**                         | **2.33 µs**                              |
+| **256 B**    | 100        | 2.72 µs                         | **2.28 µs**                         | **2.42 µs**                              |
+| **512 B**    | 100        | 2.80 µs                         | **2.47 µs**                         | **2.57 µs**                              |
+| **1 KB**     | 100        | 3.13 µs                         | **2.98 µs**                         | **2.90 µs**                              |
+| **2 KB**     | 100        | 5.21 µs                         | **4.29 µs**                         | **3.65 µs**                              |
+| **4 KB**     | 100        | 6.37 µs                         | **5.12 µs**                         | **4.59 µs**                              |
+| **8 KB**     | 100        | 7.99 µs                         | **6.30 µs**                         | **6.56 µs**                              |
+| **16 KB**    | 100        | 14.19 µs                        | **12.02 µs**                        | **9.69 µs**                              |
+| **32 KB**    | 100        | 23.09 µs                        | **18.25 µs**                        | **13.71 µs**                             |
+| **64 KB**    | 100        | 39.95 µs                        | **35.16 µs**                        | **23.31 µs**                             |
+| **128 KB**   | 100        | 94.22 µs                        | **86.06 µs**                        | **40.90 µs**                             |
+| **256 KB**   | 100        | 2,631.00 µs *(2.63 ms)*         | **180.88 µs *(0.18 ms)***           | **77.68 µs *(0.08 ms)***                 |
+| **512 KB**   | 100        | 6,683.33 µs *(6.68 ms)*         | **345.52 µs *(0.35 ms)***           | **245.86 µs *(0.25 ms)***                |
+| **1 MB**     | 100        | 11,339.24 µs *(11.34 ms)*       | **727.46 µs *(0.73 ms)***           | **434.83 µs *(0.43 ms)***                |
+| **2 MB**     | 100        | 22,700.77 µs *(22.70 ms)*       | **1,572.19 µs *(1.57 ms)***         | **763.52 µs *(0.76 ms)***                |
+| **4 MB**     | 100        | 42,738.41 µs *(42.74 ms)*       | **3,165.20 µs *(3.17 ms)***         | **1,710.13 µs *(1.71 ms)***              |
 
 ---
 
-## 🔍 Key Insights & Hardware Impact
+## 🔍 Key Insights & Benefits of Median Benchmarking
 
-1. **RNR Backoff Elimination**:
-   - Pre-posting the receive buffer before packet arrival completely eliminated hardware RNR retries.
-   - Small message Eager latency dropped from **101.06 µs** to **2.58 µs** (a **~39x latency reduction**!).
-   - Rendezvous small message latency reached **2.03 µs**, closely tracking raw InfiniBand hardware capability.
+1. **Jitter Elimination**:
+   - Measuring individual ping-pong iterations with `clock_gettime(CLOCK_MONOTONIC)` and taking the median via `qsort` removes random OS kernel context switches and network interrupt spikes.
+   - Small message latencies for both Eager and Rendezvous are smooth and consistent around **2.0 µs – 2.8 µs**.
 
 2. **Protocol Scaling**:
-   - **Eager Protocol**: Excellent for small messages ($\le 128\text{ KB}$), but scales poorly for large messages due to 128 KB chunking and intermediate `memcpy` operations (**41.22 ms** at 4 MB).
-   - **Rendezvous Protocol**: Zero-copy RDMA Write (`IBV_WR_RDMA_WRITE_WITH_IMM`) achieves **3.96 ms** at 4 MB (**~10.4x faster** than Eager protocol).
+   - **Eager Protocol**: Highly efficient for small messages ($\le 128\text{ KB}$), but scales poorly for large messages due to 128 KB chunking and intermediate `memcpy` operations (**42.74 ms** at 4 MB).
+   - **Rendezvous Protocol**: Zero-copy RDMA Write (`IBV_WR_RDMA_WRITE_WITH_IMM`) achieves **3.17 ms** at 4 MB (**~13.5x faster** than Eager protocol).

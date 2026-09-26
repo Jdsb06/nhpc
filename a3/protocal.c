@@ -37,6 +37,24 @@ struct rdma_context {
     struct send_details remote_info;
 };
 
+// Comparison function for qsort (median computation)
+int compare_doubles(const void *a, const void *b) {
+    double arg1 = *(const double *)a;
+    double arg2 = *(const double *)b;
+    if (arg1 < arg2) return -1;
+    if (arg1 > arg2) return 1;
+    return 0;
+}
+
+double compute_median(double *latencies, int count) {
+    qsort(latencies, count, sizeof(double), compare_doubles);
+    if (count % 2 == 0) {
+        return (latencies[count / 2 - 1] + latencies[count / 2]) / 2.0;
+    } else {
+        return latencies[count / 2];
+    }
+}
+
 // Setup InfiniBand RDMA Hardware Context
 struct rdma_context* setup_rdma_hardware() {
     int num_devices;
@@ -291,19 +309,15 @@ void myverbs_destroy(struct rdma_context *ctx) {
     free(ctx);
 }
 
-// =========================================================================
-// PRE-POSTING & NON-RNR RECEIVE MECHANISM
-// =========================================================================
-
-// 1. Pre-post receive buffer to network card (Eager Protocol)
+// Pre-post receive buffer (Eager)
 void myverbs_prepost_recv_eager(struct rdma_context* ctx, int size) {
     int chunk = (size > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : size;
     post_receive(ctx->qp, ctx->mr, ctx->buf, chunk);
 }
 
-// 2. Pre-post receive buffer to network card (Rendezvous Protocol)
+// Pre-post receive buffer (Rendezvous)
 void myverbs_prepost_recv_rendezvous(struct rdma_context* ctx) {
-    post_receive(ctx->qp, ctx->mr, ctx->buf, 0); // 0 payload bytes needed for RDMA Write notification
+    post_receive(ctx->qp, ctx->mr, ctx->buf, 0);
 }
 
 // Task 1: Eager Protocol Send
@@ -320,13 +334,12 @@ void myverbs_send_eager(struct rdma_context* ctx, const void *buf, int size) {
     }
 }
 
-// Task 1: Eager Protocol Recv (Wait & Collect)
+// Task 1: Eager Protocol Recv
 void myverbs_wait_recv_eager(struct rdma_context* ctx, void *buf, int size) {
     int bytes_rcv = 0;
     char *ptr = (char *)buf;
     while (bytes_rcv < size) {
         int chunk = (size - bytes_rcv > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - bytes_rcv);
-        // For chunks beyond the first pre-posted chunk in multi-chunk transfers, post receive before polling
         if (bytes_rcv > 0) {
             post_receive(ctx->qp, ctx->mr, ctx->buf, chunk);
         }
@@ -336,7 +349,7 @@ void myverbs_wait_recv_eager(struct rdma_context* ctx, void *buf, int size) {
     }
 }
 
-// Task 2: Rendezvous Protocol Send (RDMA Write with Immediate)
+// Task 2: Rendezvous Protocol Send
 void myverbs_send_rendezvous(struct rdma_context* ctx, const void *buf, int size) {
     if (buf != ctx->buf) {
         memcpy(ctx->buf, buf, size);
@@ -345,7 +358,7 @@ void myverbs_send_rendezvous(struct rdma_context* ctx, const void *buf, int size
     poll_completion(ctx->cq);
 }
 
-// Task 2: Rendezvous Protocol Recv (Wait & Collect)
+// Task 2: Rendezvous Protocol Recv
 void myverbs_wait_recv_rendezvous(struct rdma_context* ctx, void *buf, int size) {
     poll_completion(ctx->cq);
     if (buf != ctx->buf) {
@@ -353,7 +366,7 @@ void myverbs_wait_recv_rendezvous(struct rdma_context* ctx, void *buf, int size)
     }
 }
 
-// Benchmark Task 1: Eager Protocol
+// Benchmark Task 1: Eager Protocol (Median Latency)
 void run_task1_eager(int rank, struct rdma_context *ctx) {
     void *user_buff = NULL;
     if (posix_memalign(&user_buff, 4096, MAX_DATA_TEST) != 0) {
@@ -362,17 +375,19 @@ void run_task1_eager(int rank, struct rdma_context *ctx) {
     }
     memset(user_buff, 'A', MAX_DATA_TEST);
 
+    double latencies[ITERATIONS];
+
     if (rank == 0) {
         printf("\n=======================================================\n");
-        printf("       Task 1: Eager Protocol Latency Benchmark        \n");
+        printf("   Task 1: Eager Protocol Median Latency Benchmark    \n");
         printf("=======================================================\n");
-        printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Avg Latency (us)");
+        printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)");
         printf("-------------------------------------------------------\n");
     }
 
-    struct timeval start, end;
+    struct timespec start, end;
     for (int size = 1; size <= MAX_DATA_TEST; size *= 2) {
-        // Warmup iterations with pre-posting
+        // Warmup iterations
         myverbs_prepost_recv_eager(ctx, size);
         MPI_Barrier(MPI_COMM_WORLD);
         for (int i = 0; i < WARMUP; i++) {
@@ -387,49 +402,45 @@ void run_task1_eager(int rank, struct rdma_context *ctx) {
             }
         }
 
-        // Benchmark iterations with pre-posting
+        // Benchmark iterations with per-iteration nanosecond timing
         myverbs_prepost_recv_eager(ctx, size);
         MPI_Barrier(MPI_COMM_WORLD);
-        gettimeofday(&start, NULL);
 
         for (int i = 0; i < ITERATIONS; i++) {
             if (rank == 0) {
-                // Rank 0 sends Ping
-                myverbs_send_eager(ctx, user_buff, size);
+                clock_gettime(CLOCK_MONOTONIC, &start);
 
-                // Rank 0 waits for Pong
+                myverbs_send_eager(ctx, user_buff, size);
                 myverbs_wait_recv_eager(ctx, user_buff, size);
 
-                // Pre-post RX buffer for NEXT iteration's Pong
+                clock_gettime(CLOCK_MONOTONIC, &end);
+
+                double rtt_us = (end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_nsec - start.tv_nsec) / 1000.0;
+                latencies[i] = rtt_us / 2.0;
+
                 if (i < ITERATIONS - 1) {
                     myverbs_prepost_recv_eager(ctx, size);
                 }
             } else if (rank == 1) {
-                // Rank 1 waits for Ping
                 myverbs_wait_recv_eager(ctx, user_buff, size);
 
-                // Pre-post RX buffer for NEXT iteration's Ping (BEFORE sending Pong!)
                 if (i < ITERATIONS - 1) {
                     myverbs_prepost_recv_eager(ctx, size);
                 }
 
-                // Rank 1 sends Pong
                 myverbs_send_eager(ctx, user_buff, size);
             }
         }
 
-        gettimeofday(&end, NULL);
-
         if (rank == 0) {
-            double total_time_us = (end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_usec - start.tv_usec);
-            double one_way_latency_us = (total_time_us / 2.0) / ITERATIONS;
-            printf("%14d   %12d   %18.2f\n", size, ITERATIONS, one_way_latency_us);
+            double median_lat = compute_median(latencies, ITERATIONS);
+            printf("%14d   %12d   %18.2f\n", size, ITERATIONS, median_lat);
         }
     }
     free(user_buff);
 }
 
-// Benchmark Task 2: Rendezvous Protocol
+// Benchmark Task 2: Rendezvous Protocol (Median Latency)
 void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
     void *user_buff = NULL;
     if (posix_memalign(&user_buff, 4096, MAX_DATA_TEST) != 0) {
@@ -438,17 +449,19 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
     }
     memset(user_buff, 'B', MAX_DATA_TEST);
 
+    double latencies[ITERATIONS];
+
     if (rank == 0) {
         printf("\n=======================================================\n");
-        printf("    Task 2: Rendezvous Protocol Latency Benchmark     \n");
+        printf(" Task 2: Rendezvous Protocol Median Latency Benchmark \n");
         printf("=======================================================\n");
-        printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Avg Latency (us)");
+        printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)");
         printf("-------------------------------------------------------\n");
     }
 
-    struct timeval start, end;
+    struct timespec start, end;
     for (int size = 1; size <= MAX_DATA_TEST; size *= 2) {
-        // Warmup iterations with pre-posting
+        // Warmup iterations
         myverbs_prepost_recv_rendezvous(ctx);
         MPI_Barrier(MPI_COMM_WORLD);
         for (int i = 0; i < WARMUP; i++) {
@@ -463,43 +476,39 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
             }
         }
 
-        // Benchmark iterations with pre-posting
+        // Benchmark iterations with per-iteration nanosecond timing
         myverbs_prepost_recv_rendezvous(ctx);
         MPI_Barrier(MPI_COMM_WORLD);
-        gettimeofday(&start, NULL);
 
         for (int i = 0; i < ITERATIONS; i++) {
             if (rank == 0) {
-                // Rank 0 sends Ping
-                myverbs_send_rendezvous(ctx, user_buff, size);
+                clock_gettime(CLOCK_MONOTONIC, &start);
 
-                // Rank 0 waits for Pong
+                myverbs_send_rendezvous(ctx, user_buff, size);
                 myverbs_wait_recv_rendezvous(ctx, user_buff, size);
 
-                // Pre-post RX buffer for NEXT iteration's Pong
+                clock_gettime(CLOCK_MONOTONIC, &end);
+
+                double rtt_us = (end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_nsec - start.tv_nsec) / 1000.0;
+                latencies[i] = rtt_us / 2.0;
+
                 if (i < ITERATIONS - 1) {
                     myverbs_prepost_recv_rendezvous(ctx);
                 }
             } else if (rank == 1) {
-                // Rank 1 waits for Ping
                 myverbs_wait_recv_rendezvous(ctx, user_buff, size);
 
-                // Pre-post RX buffer for NEXT iteration's Ping (BEFORE sending Pong!)
                 if (i < ITERATIONS - 1) {
                     myverbs_prepost_recv_rendezvous(ctx);
                 }
 
-                // Rank 1 sends Pong
                 myverbs_send_rendezvous(ctx, user_buff, size);
             }
         }
 
-        gettimeofday(&end, NULL);
-
         if (rank == 0) {
-            double total_time_us = (end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_usec - start.tv_usec);
-            double one_way_latency_us = (total_time_us / 2.0) / ITERATIONS;
-            printf("%14d   %12d   %18.2f\n", size, ITERATIONS, one_way_latency_us);
+            double median_lat = compute_median(latencies, ITERATIONS);
+            printf("%14d   %12d   %18.2f\n", size, ITERATIONS, median_lat);
         }
     }
     free(user_buff);

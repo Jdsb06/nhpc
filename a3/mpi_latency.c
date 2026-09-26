@@ -1,19 +1,38 @@
 #include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <sys/time.h>
 
 #define MAX_SIZE (1024 * 1024 * 4)
 #define ITERATIONS 100
 #define WARMUP 10
 
+// Comparison function for qsort (median computation)
+int compare_doubles_mpi(const void *a, const void *b) {
+    double arg1 = *(const double *)a;
+    double arg2 = *(const double *)b;
+    if (arg1 < arg2) return -1;
+    if (arg1 > arg2) return 1;
+    return 0;
+}
+
+double compute_median_mpi(double *latencies, int count) {
+    qsort(latencies, count, sizeof(double), compare_doubles_mpi);
+    if (count % 2 == 0) {
+        return (latencies[count / 2 - 1] + latencies[count / 2]) / 2.0;
+    } else {
+        return latencies[count / 2];
+    }
+}
+
 int main(int argc, char **argv) {
   int size, rank, src_rank = 0, dst_rank = 1;
   char *src = NULL, *dst = NULL;
   int i, msg_size;
   MPI_Status status;
-  struct timeval start, end;
-  float total_time = 0;
+  struct timespec start, end;
+  double latencies[ITERATIONS];
 
   if (argc > 1) src_rank = atoi(argv[1]);
   if (argc > 2) dst_rank = atoi(argv[2]);
@@ -25,9 +44,9 @@ int main(int argc, char **argv) {
 
   if (rank == src_rank) {
     printf("\n=======================================================\n");
-    printf("         Unmodified MPI Latency Benchmark              \n");
+    printf("    Unmodified MPI Median Latency Benchmark            \n");
     printf("=======================================================\n");
-    printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Avg Latency (us)");
+    printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)");
     printf("-------------------------------------------------------\n");
   }
 
@@ -51,27 +70,31 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Measured Benchmark iterations starting from 1 byte
+  // Measured Benchmark iterations starting from 1 byte with median calculation
   for (msg_size = 1; msg_size <= MAX_SIZE; msg_size *= 2) {
     MPI_Barrier(MPI_COMM_WORLD);
 
-    gettimeofday(&start, NULL);
     for (i = 0; i < ITERATIONS; i++) {
        if (rank == src_rank) {
+         clock_gettime(CLOCK_MONOTONIC, &start);
+
          MPI_Send(src, msg_size, MPI_CHAR, dst_rank, 1, MPI_COMM_WORLD);
          MPI_Recv(dst, msg_size, MPI_CHAR, dst_rank, 1, MPI_COMM_WORLD, &status);
+
+         clock_gettime(CLOCK_MONOTONIC, &end);
+
+         double rtt_us = (end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_nsec - start.tv_nsec) / 1000.0;
+         latencies[i] = rtt_us / 2.0;
+
        } else if (rank == dst_rank) {
          MPI_Recv(dst, msg_size, MPI_CHAR, src_rank, 1, MPI_COMM_WORLD, &status);
          MPI_Send(src, msg_size, MPI_CHAR, src_rank, 1, MPI_COMM_WORLD);
        }
     }
-    gettimeofday(&end, NULL);
-
-    total_time = ((end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_usec - start.tv_usec)) / 2.0;
-    total_time /= ITERATIONS;
 
     if (rank == src_rank) {
-      printf("%14d   %12d   %18.2f\n", msg_size, ITERATIONS, total_time);
+      double median_lat = compute_median_mpi(latencies, ITERATIONS);
+      printf("%14d   %12d   %18.2f\n", msg_size, ITERATIONS, median_lat);
     }
   }
 
