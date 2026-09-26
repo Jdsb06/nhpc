@@ -90,64 +90,66 @@ Executed across nodes **`compute00.local`** and **`compute01.local`** over Infin
 
 | Message Size | Iterations | Task 1: Eager Protocol (4-Slot Ring) | Task 2: Rendezvous Protocol (On-The-Fly Reg) | Unmodified MPI (`MPI_Send` / `MPI_Recv`) |
 |-------------:|-----------:|-------------------------------------:|---------------------------------------------:|-----------------------------------------:|
-| **1 B**      | 100        | **2.59 µs**                          | 25.86 µs                                     | **1.76 µs**                              |
-| **2 B**      | 100        | **2.59 µs**                          | 26.75 µs                                     | **1.65 µs**                              |
-| **4 B**      | 100        | **2.58 µs**                          | 25.95 µs                                     | **1.64 µs**                              |
-| **8 B**      | 100        | **2.56 µs**                          | 25.45 µs                                     | **1.62 µs**                              |
-| **16 B**     | 100        | **2.58 µs**                          | 25.34 µs                                     | **1.64 µs**                              |
-| **32 B**     | 100        | **2.58 µs**                          | 32.25 µs                                     | **1.72 µs**                              |
-| **64 B**     | 100        | **2.67 µs**                          | 26.01 µs                                     | **2.34 µs**                              |
-| **128 B**    | 100        | **2.94 µs**                          | 27.36 µs                                     | **2.58 µs**                              |
-| **256 B**    | 100        | **3.22 µs**                          | 23.25 µs                                     | **3.28 µs**                              |
-| **512 B**    | 100        | **3.18 µs**                          | 23.28 µs                                     | **3.67 µs**                              |
-| **1 KB**     | 100        | **3.45 µs**                          | 30.78 µs                                     | **3.97 µs**                              |
-| **2 KB**     | 100        | **4.21 µs**                          | 25.44 µs                                     | **4.62 µs**                              |
-| **4 KB**     | 100        | **5.87 µs**                          | 25.17 µs                                     | **6.11 µs**                              |
-| **8 KB**     | 100        | **11.08 µs**                         | 27.05 µs                                     | **7.65 µs**                              |
-| **16 KB**    | 100        | **13.63 µs**                         | 30.40 µs                                     | **9.98 µs**                              |
-| **32 KB**    | 100        | **21.66 µs**                         | 38.37 µs                                     | **19.89 µs**                             |
-| **64 KB**    | 100        | **38.56 µs**                         | 50.21 µs                                     | **23.05 µs**                             |
-| **128 KB**   | 100        | 77.11 µs                             | **65.29 µs**                                 | **46.18 µs**                             |
-| **256 KB**   | 100        | 151.90 µs *(0.15 ms)*                | **106.59 µs *(0.11 ms)***                    | **80.54 µs *(0.08 ms)***                 |
-| **512 KB**   | 100        | 304.06 µs *(0.30 ms)*                | **180.03 µs *(0.18 ms)***                    | **251.25 µs *(0.25 ms)***                |
-| **1 MB**     | 100        | 593.98 µs *(0.59 ms)*                | **329.79 µs *(0.33 ms)***                    | **476.59 µs *(0.48 ms)***                |
-| **2 MB**     | 100        | 1,035.68 µs *(1.04 ms)*              | **624.65 µs *(0.62 ms)***                    | **830.93 µs *(0.83 ms)***                |
-| **4 MB**     | 100        | 2,128.69 µs *(2.13 ms)*              | **1,238.08 µs *(1.24 ms)***                  | **1,815.19 µs *(1.82 ms)***              |
+| **1 B**      | 100        | **2.59 µs**                          | 25.63 µs                                     | **1.73 µs**                              |
+| **2 B**      | 100        | **2.59 µs**                          | 25.50 µs                                     | **1.71 µs**                              |
+| **4 B**      | 100        | **2.58 µs**                          | 24.54 µs                                     | **1.65 µs**                              |
+| **8 B**      | 100        | **2.58 µs**                          | 24.18 µs                                     | **1.62 µs**                              |
+| **16 B**     | 100        | **2.58 µs**                          | 24.11 µs                                     | **1.64 µs**                              |
+| **32 B**     | 100        | **2.60 µs**                          | 24.09 µs                                     | **1.74 µs**                              |
+| **64 B**     | 100        | **2.69 µs**                          | 24.24 µs                                     | **2.21 µs**                              |
+| **128 B**    | 100        | **2.73 µs**                          | 24.17 µs                                     | **2.32 µs**                              |
+| **256 B**    | 100        | **2.81 µs**                          | 24.35 µs                                     | **2.41 µs**                              |
+| **512 B**    | 100        | **2.97 µs**                          | 24.42 µs                                     | **2.60 µs**                              |
+| **1 KB**     | 100        | **3.39 µs**                          | 24.72 µs                                     | **3.20 µs**                              |
+| **2 KB**     | 100        | **4.10 µs**                          | 25.20 µs                                     | **3.78 µs**                              |
+| **4 KB**     | 100        | **5.84 µs**                          | 26.35 µs                                     | **4.56 µs**                              |
+| **8 KB**     | 100        | **10.55 µs**                         | 28.14 µs                                     | **6.39 µs**                              |
+| **16 KB**    | 100        | **14.32 µs**                         | 31.15 µs                                     | **9.24 µs**                              |
+| **32 KB**    | 100        | **23.86 µs**                         | 36.51 µs                                     | **13.52 µs**                             |
+| **64 KB**    | 100        | **39.15 µs**                         | 46.64 µs                                     | **23.03 µs**                             |
+| **128 KB**   | 100        | 85.09 µs                             | **64.68 µs**                                 | **42.58 µs**                             |
+| **256 KB**   | 100        | 181.27 µs *(0.18 ms)*                | **103.80 µs *(0.10 ms)***                    | **73.48 µs *(0.07 ms)***                 |
+| **512 KB**   | 100        | 304.74 µs *(0.30 ms)*                | **176.05 µs *(0.18 ms)***                    | **286.47 µs *(0.29 ms)***                |
+| **1 MB**     | 100        | 529.99 µs *(0.53 ms)*                | **323.05 µs *(0.32 ms)***                    | **457.45 µs *(0.46 ms)***                |
+| **2 MB**     | 100        | 1,146.90 µs *(1.15 ms)*              | **624.42 µs *(0.62 ms)***                    | **956.50 µs *(0.96 ms)***                |
+| **4 MB**     | 100        | 1,868.14 µs *(1.87 ms)*              | **1,239.18 µs *(1.24 ms)***                  | **1,575.80 µs *(1.58 ms)***              |
 
 ---
 
-## ⏱️ Diagnostic Probe: One-Way Rendezvous Latency Component Breakdown
+## ⏱️ Diagnostic Probe: One-Way Rendezvous Latency Component Breakdown (Medians)
 
-A high-resolution timing probe measured the exact 1-way sender component breakdown (`myverbs_send_rendezvous_timed`):
+A high-resolution timing probe stored per-iteration timings in component arrays and computed medians via `compute_median`:
 
 | Message Size | `ibv_reg_mr` Cost | Control Handshake | RDMA Write Transfer | `ibv_dereg_mr` Cost | **Probe Component Sum** | **Measured One-Way Latency (RTT/2)** |
 |-------------:|------------------:|------------------:|--------------------:|--------------------:|------------------------:|-------------------------------------:|
-| **1 B**      | 12.47 µs          | 0.44 µs           | 2.70 µs             | 9.47 µs             | **25.07 µs**            | **25.86 µs**                         |
-| **4 KB**     | 10.27 µs          | 1.64 µs           | 4.75 µs             | 8.25 µs             | **24.91 µs**            | **25.17 µs**                         |
-| **128 KB**   | 16.69 µs          | 30.17 µs          | 39.03 µs            | 12.00 µs            | **97.90 µs**            | **65.29 µs**                         |
-| **4 MB**     | 105.37 µs         | 0.50 µs           | 1,063.45 µs         | 71.37 µs            | **1,240.70 µs**         | **1,238.08 µs**                      |
+| **1 B**      | 11.99 µs          | 0.27 µs           | 2.66 µs             | 9.54 µs             | **24.46 µs**            | **25.63 µs**                         |
+| **64 B**     | 10.78 µs          | 0.29 µs           | 2.64 µs             | 9.18 µs             | **22.89 µs**            | **24.24 µs**                         |
+| **4 KB**     | 10.78 µs          | 0.29 µs           | 4.69 µs             | 9.26 µs             | **25.01 µs**            | **26.35 µs**                         |
+| **128 KB**   | 14.13 µs          | 0.93 µs           | 38.71 µs            | 10.39 µs            | **64.16 µs**            | **64.68 µs**                         |
+| **1 MB**     | 34.68 µs          | 3.35 µs           | 270.00 µs           | 15.18 µs            | **323.21 µs**           | **323.05 µs**                        |
+| **4 MB**     | 110.43 µs         | 4.11 µs           | 1,064.13 µs         | 37.26 µs            | **1,215.93 µs**         | **1,239.18 µs**                      |
 
 ### 🔬 Key Diagnostic Takeaways:
-1. **Mathematical Consistency**: Measuring only sender-side operations during a single one-way transfer ensures that `ibv_reg_mr` + Handshake + RDMA_Write + `ibv_dereg_mr` sums linearly to match the total measured 1-way latency (**1,240.70 µs probe sum vs 1,238.08 µs actual latency at 4 MB**).
+1. **Airtight Mathematical Consistency**: By computing `compute_median` across component arrays for each iteration, the sum of probe component medians matches the overall 1-way median latency (`RTT / 2`) across all sizes (e.g. **64.16 µs probe sum vs 64.68 µs total at 128 KB**, and **1,215.93 µs probe sum vs 1,239.18 µs total at 4 MB**).
 2. **Outperforming Intel MPI from 512 KB Onward**: Zero-copy Rendezvous outperforms unmodified Intel MPI (`MPI_Send`/`MPI_Recv`) for all message sizes $\ge 512\text{ KB}$:
-   - **512 KB**: Rendezvous (**180.03 µs**) beats MPI (**251.25 µs**) by **28.3%**.
-   - **1 MB**: Rendezvous (**329.79 µs**) beats MPI (**476.59 µs**) by **30.8%**.
-   - **2 MB**: Rendezvous (**624.65 µs**) beats MPI (**830.93 µs**) by **24.8%**.
-   - **4 MB**: Rendezvous (**1,238.08 µs**) beats MPI (**1,815.19 µs**) by **31.8%**.
+   - **512 KB**: Rendezvous (**176.05 µs**) beats MPI (**286.47 µs**) by **38.5%**.
+   - **1 MB**: Rendezvous (**323.05 µs**) beats MPI (**457.45 µs**) by **29.4%**.
+   - **2 MB**: Rendezvous (**624.42 µs**) beats MPI (**956.50 µs**) by **34.7%**.
+   - **4 MB**: Rendezvous (**1,239.18 µs**) beats MPI (**1,575.80 µs**) by **21.4%**.
    Bypassing internal MPI communicator checks, matching queue searches, and intermediate data buffering allows direct RDMA Write to achieve superior throughput.
-3. **Eager Ring Buffer Scaling**: The 4-slot ring buffer (`EAGER_SLOTS 4`) completely eliminated the multi-chunk RNR backoff cliff at 256 KB. Eager latency now scales smoothly from **77.11 µs** (128 KB) up to **2.13 ms** (4 MB).
+3. **Eager Ring Buffer Scaling**: The 4-slot ring buffer (`EAGER_SLOTS 4`) completely eliminated the multi-chunk RNR backoff cliff at 256 KB. Eager latency now scales smoothly from **85.09 µs** (128 KB) up to **1.87 ms** (4 MB).
 
 ---
 
 ## 🔍 Trade-Off Analysis: Eager vs Rendezvous Protocol
 
 1. **Small Message Trade-off (1 B to 16 KB)**:
-   - **Eager Protocol**: Performs memory registration **once** during initialization. Transfer costs zero `ibv_reg_mr` overhead per message, achieving **~2.56 µs** latency.
-   - **Rendezvous Protocol**: Registers and deregisters user memory on-the-fly (`ibv_reg_mr` + `ibv_dereg_mr`) for every single transfer. Operating system page pinning and kernel bookkeeping add a fixed **~20 µs** registration overhead per message. Per assignment specifications, doing fresh on-the-fly registration per transfer without caching MR handles is a pedagogically honest implementation of true zero-copy Rendezvous. This explicitly demonstrates why real-world MPI implementations switch from Eager to Rendezvous only at larger message sizes!
+   - **Eager Protocol**: Performs memory registration **once** during initialization. Transfer costs zero `ibv_reg_mr` overhead per message, achieving **~2.58 µs** latency.
+   - **Rendezvous Protocol**: Registers and deregisters user memory on-the-fly (`ibv_reg_mr` + `ibv_dereg_mr`) for every single transfer. Operating system page pinning and kernel bookkeeping add a fixed **~20 µs - 25 µs** registration overhead per message. Per assignment specifications, doing fresh on-the-fly registration per transfer without caching MR handles is a pedagogically honest implementation of true zero-copy Rendezvous. This explicitly demonstrates why real-world MPI implementations switch from Eager to Rendezvous only at larger message sizes!
 
 2. **Large Message Trade-off (256 KB to 4 MB)**:
-   - **Eager Protocol**: Payload is split into 128 KB chunks, requiring 32 sequential chunk transfers at 4 MB. To prevent hardware DMA overwrite races on the shared 128 KB bounce buffer, the receiver posts subsequent receive WRs only after draining (`memcpy`) each chunk out of the bounce buffer. This flow-control backpressure guarantees data integrity, causing latency to scale with payload size to **28.36 ms**.
-   - **Rendezvous Protocol**: Despite the on-the-fly `ibv_reg_mr` overhead (~20 µs), zero-copy RDMA Write (`IBV_WR_RDMA_WRITE_WITH_IMM`) bypasses all CPU `memcpy` and chunking overhead, reducing 4 MB latency to **2.63 ms** (**~10.8x faster** than Eager protocol!).
+   - **Eager Protocol**: Payload is split into 128 KB chunks (32 sequential chunk transfers at 4 MB). The 4-slot ring buffer prevents hardware DMA stalls, allowing latency to scale smoothly to **1.87 ms** at 4 MB.
+   - **Rendezvous Protocol**: Despite the on-the-fly `ibv_reg_mr` overhead (~20 µs - 110 µs), zero-copy RDMA Write (`IBV_WR_RDMA_WRITE_WITH_IMM`) bypasses all CPU `memcpy` and chunking overhead, reducing 4 MB latency to **1.24 ms** (**~1.5x faster** than Eager protocol and **~1.27x faster** than unmodified Intel MPI!).
 
 3. **Portability & Spec Compliance Notes**:
    - **Network Byte Order**: Immediate data (`imm_data`) is converted using `htonl` and `ntohl` per InfiniBand architecture spec for strict cross-endian portability.

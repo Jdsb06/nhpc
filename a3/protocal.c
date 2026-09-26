@@ -297,7 +297,7 @@ struct rdma_context* myverbs_init(enum transfer_mode mode, int rank) {
     ctx->rank = rank;
 
     // Allocate & register 4 x 128 KB ring-buffer slots for Eager mode
-    int access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
+    int access = IBV_ACCESS_LOCAL_WRITE;
     for (int i = 0; i < EAGER_SLOTS; i++) {
         if (posix_memalign(&ctx->eager_buf[i], 4096, PA_BUFFER_SIZE) != 0) {
             perror("posix_memalign eager_buf failed");
@@ -645,8 +645,10 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
 
     struct timespec start, end;
     for (int size = 1; size <= MAX_DATA_TEST; size *= 2) {
-        struct rz_probe_stats probe_sender = {0};
-        struct rz_probe_stats probe_recv = {0};
+        double probe_reg[ITERATIONS];
+        double probe_handshake[ITERATIONS];
+        double probe_rdma[ITERATIONS];
+        double probe_dereg[ITERATIONS];
 
         // Warmup iterations
         MPI_Barrier(MPI_COMM_WORLD);
@@ -665,15 +667,21 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
 
         for (int i = 0; i < ITERATIONS; i++) {
             if (rank == 0) {
+                struct rz_probe_stats sample = {0};
                 clock_gettime(CLOCK_MONOTONIC, &start);
 
-                myverbs_send_rendezvous_timed(ctx, user_buff, size, &probe_sender);
+                myverbs_send_rendezvous_timed(ctx, user_buff, size, &sample);
                 myverbs_wait_recv_rendezvous_timed(ctx, user_buff, size, NULL);
 
                 clock_gettime(CLOCK_MONOTONIC, &end);
 
                 double rtt_us = (end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_nsec - start.tv_nsec) / 1000.0;
                 latencies[i] = rtt_us / 2.0;
+
+                probe_reg[i] = sample.reg_mr_us;
+                probe_handshake[i] = sample.handshake_us;
+                probe_rdma[i] = sample.rdma_write_us;
+                probe_dereg[i] = sample.dereg_mr_us;
             } else if (rank == 1) {
                 myverbs_wait_recv_rendezvous_timed(ctx, user_buff, size, NULL);
                 myverbs_send_rendezvous_timed(ctx, user_buff, size, NULL);
@@ -684,15 +692,15 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
             double median_lat = compute_median(latencies, ITERATIONS);
             printf("%14d   %12d   %18.2f\n", size, ITERATIONS, median_lat);
 
-            // Print diagnostic probe split for key message sizes (exact 1-way component breakdown)
+            // Print diagnostic probe split for key message sizes (exact 1-way median component breakdown)
             if (size == 1 || size == 64 || size == 4096 || size == 131072 || size == 1048576 || size == 4194304) {
-                double avg_reg = probe_sender.reg_mr_us / (double)ITERATIONS;
-                double avg_handshake = probe_sender.handshake_us / (double)ITERATIONS;
-                double avg_rdma = probe_sender.rdma_write_us / (double)ITERATIONS;
-                double avg_dereg = probe_sender.dereg_mr_us / (double)ITERATIONS;
-                double sum_probe = avg_reg + avg_handshake + avg_rdma + avg_dereg;
+                double median_reg = compute_median(probe_reg, ITERATIONS);
+                double median_handshake = compute_median(probe_handshake, ITERATIONS);
+                double median_rdma = compute_median(probe_rdma, ITERATIONS);
+                double median_dereg = compute_median(probe_dereg, ITERATIONS);
+                double sum_probe = median_reg + median_handshake + median_rdma + median_dereg;
                 printf("   [PROBE %7d B] ibv_reg_mr: %6.2fus | Handshake: %6.2fus | RDMA_Write: %6.2fus | ibv_dereg_mr: %6.2fus | Probe Sum: %6.2fus\n",
-                       size, avg_reg, avg_handshake, avg_rdma, avg_dereg, sum_probe);
+                       size, median_reg, median_handshake, median_rdma, median_dereg, sum_probe);
             }
         }
     }
