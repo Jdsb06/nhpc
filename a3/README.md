@@ -11,7 +11,7 @@ This assignment evaluates two InfiniBand RDMA communication protocols—**Eager 
 ### 1. Task 1: Eager Protocol (`myverbs_send_eager` / `myverbs_wait_recv_eager`)
 - **Pre-allocation & Registration**: During `myverbs_init`, a page-aligned buffer of size **128 KB** (`PA_BUFFER_SIZE`) is allocated and registered **once** with InfiniBand hardware (`ibv_reg_mr`).
 - **Chunking Mechanism**: If a user buffer transfer exceeds 128 KB (e.g., 512 KB), the payload is divided into smaller chunks:
-  $$\text{Chunk Count} = \left\lceil \frac{\text{Message Size}}{\text{PA\_BUFFER\_SIZE}} \right\rceil = \frac{512\text{ KB}}{128\text{ KB}} = 4\text{ iterations}$$
+  $$\text{Chunk Count} = \left\lceil \frac{\text{Message Size}}{\text{Chunk Size (128 KB)}} \right\rceil = \frac{512\text{ KB}}{128\text{ KB}} = 4\text{ iterations}$$
 - **Sender Logic**: Copies each chunk into `prealloc_buf`, posts a Send Work Request (`IBV_WR_SEND`), and polls the CQ (`poll_completion`) for receipt.
 - **Receiver Logic**: Pre-posts receive buffer (`myverbs_prepost_recv_eager`), polls CQ (`poll_completion`), and copies data to user buffer.
 
