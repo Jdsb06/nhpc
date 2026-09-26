@@ -10,6 +10,7 @@
 
 #define IB_PORT 1
 #define PA_BUFFER_SIZE (128 * 1024)       // 128 KB preallocated buffer chunk size for Eager
+#define EAGER_SLOTS 4                      // 4 preallocated ring-buffer slots for Eager mode
 #define MAX_DATA_TEST (4 * 1024 * 1024)   // 4 MB max test buffer size
 #define ITERATIONS 100                     // Iterations per message size
 #define WARMUP 10                          // Warmup iterations
@@ -42,8 +43,8 @@ struct rdma_context {
     enum transfer_mode mode;
     int rank;
 
-    void *eager_buf;         // Pre-allocated 128 KB buffer for Eager mode
-    struct ibv_mr *eager_mr; // Pre-registered MR for Eager mode
+    void *eager_buf[EAGER_SLOTS];         // Ring of 4 x 128 KB preallocated bounce buffers
+    struct ibv_mr *eager_mr[EAGER_SLOTS]; // 4 pre-registered MRs for Eager mode
 
     void *ctrl_buf;          // Pre-allocated 4 KB control buffer for Verbs handle exchange
     struct ibv_mr *ctrl_mr;  // Control MR for Verbs handle exchange
@@ -295,18 +296,20 @@ struct rdma_context* myverbs_init(enum transfer_mode mode, int rank) {
     ctx->mode = mode;
     ctx->rank = rank;
 
-    // Allocate & register 128 KB bounce buffer for Eager mode
-    if (posix_memalign(&ctx->eager_buf, 4096, PA_BUFFER_SIZE) != 0) {
-        perror("posix_memalign eager_buf failed");
-        exit(1);
-    }
-    memset(ctx->eager_buf, 0, PA_BUFFER_SIZE);
-
+    // Allocate & register 4 x 128 KB ring-buffer slots for Eager mode
     int access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
-    ctx->eager_mr = ibv_reg_mr(ctx->pd, ctx->eager_buf, PA_BUFFER_SIZE, access);
-    if (!ctx->eager_mr) {
-        perror("ibv_reg_mr eager_buf failed");
-        exit(1);
+    for (int i = 0; i < EAGER_SLOTS; i++) {
+        if (posix_memalign(&ctx->eager_buf[i], 4096, PA_BUFFER_SIZE) != 0) {
+            perror("posix_memalign eager_buf failed");
+            exit(1);
+        }
+        memset(ctx->eager_buf[i], 0, PA_BUFFER_SIZE);
+
+        ctx->eager_mr[i] = ibv_reg_mr(ctx->pd, ctx->eager_buf[i], PA_BUFFER_SIZE, access);
+        if (!ctx->eager_mr[i]) {
+            perror("ibv_reg_mr eager_buf failed");
+            exit(1);
+        }
     }
 
     // Allocate & register 4 KB control buffer for Verbs handle exchange
@@ -349,8 +352,10 @@ struct rdma_context* myverbs_init(enum transfer_mode mode, int rank) {
 // Destroy RDMA Context
 void myverbs_destroy(struct rdma_context *ctx) {
     if (!ctx) return;
-    if (ctx->eager_mr) ibv_dereg_mr(ctx->eager_mr);
-    if (ctx->eager_buf) free(ctx->eager_buf);
+    for (int i = 0; i < EAGER_SLOTS; i++) {
+        if (ctx->eager_mr[i]) ibv_dereg_mr(ctx->eager_mr[i]);
+        if (ctx->eager_buf[i]) free(ctx->eager_buf[i]);
+    }
     if (ctx->ctrl_mr) ibv_dereg_mr(ctx->ctrl_mr);
     if (ctx->ctrl_buf) free(ctx->ctrl_buf);
     if (ctx->qp) ibv_destroy_qp(ctx->qp);
@@ -365,39 +370,54 @@ void myverbs_destroy(struct rdma_context *ctx) {
 // TASK 1: EAGER PROTOCOL (128 KB Chunking via Pre-Allocated Bounce Buffer)
 // =========================================================================
 
-// Pre-posts receive buffer for the FIRST chunk in Eager transfer
+// Pre-posts receive buffers for up to EAGER_SLOTS chunks in Eager transfer
 void myverbs_prepost_recv_eager(struct rdma_context* ctx, int size) {
-    int chunk = (size > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : size;
-    post_receive(ctx->qp, ctx->eager_mr, ctx->eager_buf, chunk);
+    int bytes_posted = 0;
+    int chunk_idx = 0;
+    while (bytes_posted < size && chunk_idx < EAGER_SLOTS) {
+        int chunk = (size - bytes_posted > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - bytes_posted);
+        int slot = chunk_idx % EAGER_SLOTS;
+        post_receive(ctx->qp, ctx->eager_mr[slot], ctx->eager_buf[slot], chunk);
+        bytes_posted += chunk;
+        chunk_idx++;
+    }
 }
 
 void myverbs_send_eager(struct rdma_context* ctx, const void *buf, int size) {
     int bytes_sent = 0;
+    int chunk_idx = 0;
     const char *ptr = (const char *)buf;
 
     while (bytes_sent < size) {
         int chunk = (size - bytes_sent > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - bytes_sent);
-        memcpy(ctx->eager_buf, ptr + bytes_sent, chunk);
-        post_send(ctx->qp, ctx->eager_mr, ctx->eager_buf, chunk, IBV_WR_SEND);
+        int slot = chunk_idx % EAGER_SLOTS;
+        memcpy(ctx->eager_buf[slot], ptr + bytes_sent, chunk);
+        post_send(ctx->qp, ctx->eager_mr[slot], ctx->eager_buf[slot], chunk, IBV_WR_SEND);
         poll_completion_wc(ctx->send_cq, IBV_WC_SEND);
         bytes_sent += chunk;
+        chunk_idx++;
     }
 }
 
 void myverbs_wait_recv_eager(struct rdma_context* ctx, void *buf, int size) {
     int bytes_rcv = 0;
+    int chunk_idx = 0;
     char *ptr = (char *)buf;
     while (bytes_rcv < size) {
         int chunk = (size - bytes_rcv > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - bytes_rcv);
+        int slot = chunk_idx % EAGER_SLOTS;
         poll_completion_wc(ctx->recv_cq, IBV_WC_RECV);
-        memcpy(ptr + bytes_rcv, ctx->eager_buf, chunk);
+        memcpy(ptr + bytes_rcv, ctx->eager_buf[slot], chunk);
         bytes_rcv += chunk;
+        chunk_idx++;
 
-        // Post receive WR for next chunk ONLY AFTER copying out current chunk from eager_buf
-        // to prevent hardware DMA overwrite races on shared bounce buffer memory.
-        if (bytes_rcv < size) {
-            int next_chunk = (size - bytes_rcv > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - bytes_rcv);
-            post_receive(ctx->qp, ctx->eager_mr, ctx->eager_buf, next_chunk);
+        // Replenish the ring buffer slot for chunk_idx + EAGER_SLOTS - 1
+        int next_chunk_idx = chunk_idx + EAGER_SLOTS - 1;
+        int next_bytes_offset = next_chunk_idx * PA_BUFFER_SIZE;
+        if (next_bytes_offset < size) {
+            int next_chunk = (size - next_bytes_offset > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - next_bytes_offset);
+            int next_slot = next_chunk_idx % EAGER_SLOTS;
+            post_receive(ctx->qp, ctx->eager_mr[next_slot], ctx->eager_buf[next_slot], next_chunk);
         }
     }
 }
@@ -407,39 +427,68 @@ void myverbs_wait_recv_eager(struct rdma_context* ctx, void *buf, int size) {
 // (On-The-Fly MR Reg & Verbs Channel Handle Exchange)
 // =========================================================================
 
+// Rendezvous Timing Probe Sample Structure
+struct rz_probe_stats {
+    double reg_mr_us;
+    double handshake_us;
+    double rdma_write_us;
+    double dereg_mr_us;
+};
+
 // Rendezvous Sender: Registers user_buf on-the-fly, receives remote handle over Verbs, RDMA Writes directly, and deregisters
-void myverbs_send_rendezvous(struct rdma_context* ctx, const void *user_buf, int size) {
-    // 1. On-the-fly memory registration of sender's actual user buffer (ZERO memcpy!)
+void myverbs_send_rendezvous_timed(struct rdma_context* ctx, const void *user_buf, int size, struct rz_probe_stats *stats) {
+    struct timespec t0, t1, t2, t3, t4;
+
+    // 1. Pre-post control receive BEFORE ibv_reg_mr so the receiver's handle post_send NEVER hits an empty RQ (eliminates RNR)
+    post_receive(ctx->qp, ctx->ctrl_mr, ctx->ctrl_buf, sizeof(struct rz_handle));
+
+    // 2. On-the-fly memory registration of sender's actual user buffer (ZERO memcpy!)
+    if (stats) clock_gettime(CLOCK_MONOTONIC, &t0);
     struct ibv_mr *send_mr = ibv_reg_mr(ctx->pd, (void*)user_buf, size, IBV_ACCESS_LOCAL_WRITE);
     if (!send_mr) {
         perror("ibv_reg_mr sender on-the-fly failed");
         exit(1);
     }
-
-    // 2. Pre-post receive to receive remote handle (vaddr, rkey) over Verbs Channel Semantics
-    post_receive(ctx->qp, ctx->ctrl_mr, ctx->ctrl_buf, sizeof(struct rz_handle));
+    if (stats) clock_gettime(CLOCK_MONOTONIC, &t1);
 
     // 3. Wait for receiver's handle message over Verbs Channel
     poll_completion_wc(ctx->recv_cq, IBV_WC_RECV);
     struct rz_handle remote_h;
     memcpy(&remote_h, ctx->ctrl_buf, sizeof(struct rz_handle));
+    if (stats) clock_gettime(CLOCK_MONOTONIC, &t2);
 
     // 4. Perform TRUE ZERO-COPY RDMA Write with Immediate directly into receiver's user memory
     post_rdma_write_imm_mr(ctx->qp, send_mr, (void*)user_buf, size, remote_h.vaddr, remote_h.rkey);
     poll_completion_wc(ctx->send_cq, IBV_WC_RDMA_WRITE); // Wait for RDMA write send completion
+    if (stats) clock_gettime(CLOCK_MONOTONIC, &t3);
 
     // 5. On-the-fly memory deregistration
     ibv_dereg_mr(send_mr);
+    if (stats) {
+        clock_gettime(CLOCK_MONOTONIC, &t4);
+        stats->reg_mr_us += (t1.tv_sec - t0.tv_sec) * 1000000.0 + (t1.tv_nsec - t0.tv_nsec) / 1000.0;
+        stats->handshake_us += (t2.tv_sec - t1.tv_sec) * 1000000.0 + (t2.tv_nsec - t1.tv_nsec) / 1000.0;
+        stats->rdma_write_us += (t3.tv_sec - t2.tv_sec) * 1000000.0 + (t3.tv_nsec - t2.tv_nsec) / 1000.0;
+        stats->dereg_mr_us += (t4.tv_sec - t3.tv_sec) * 1000000.0 + (t4.tv_nsec - t3.tv_nsec) / 1000.0;
+    }
+}
+
+void myverbs_send_rendezvous(struct rdma_context* ctx, const void *user_buf, int size) {
+    myverbs_send_rendezvous_timed(ctx, user_buf, size, NULL);
 }
 
 // Rendezvous Receiver: Registers user_buf on-the-fly, sends handle over Verbs, catches RDMA Write, and deregisters
-void myverbs_wait_recv_rendezvous(struct rdma_context* ctx, void *user_buf, int size) {
+void myverbs_wait_recv_rendezvous_timed(struct rdma_context* ctx, void *user_buf, int size, struct rz_probe_stats *stats) {
+    struct timespec t0, t1, t2, t3, t4;
+
     // 1. On-the-fly memory registration of receiver's actual user buffer (ZERO memcpy!)
+    if (stats) clock_gettime(CLOCK_MONOTONIC, &t0);
     struct ibv_mr *recv_mr = ibv_reg_mr(ctx->pd, user_buf, size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     if (!recv_mr) {
         perror("ibv_reg_mr receiver on-the-fly failed");
         exit(1);
     }
+    if (stats) clock_gettime(CLOCK_MONOTONIC, &t1);
 
     // 2. Pre-post 0-byte receive request to catch RDMA Write with Immediate notification
     post_receive(ctx->qp, recv_mr, user_buf, 0);
@@ -455,6 +504,7 @@ void myverbs_wait_recv_rendezvous(struct rdma_context* ctx, void *user_buf, int 
     // 4. Send control handle to sender via Verbs Channel Semantics (ibv_post_send)
     post_send(ctx->qp, ctx->ctrl_mr, ctx->ctrl_buf, sizeof(struct rz_handle), IBV_WR_SEND);
     poll_completion_wc(ctx->send_cq, IBV_WC_SEND); // Wait for control send completion
+    if (stats) clock_gettime(CLOCK_MONOTONIC, &t2);
 
     // 5. Wait for sender's RDMA Write with Immediate to complete directly into user_buf
     struct ibv_wc wc = poll_completion_wc(ctx->recv_cq, IBV_WC_RECV_RDMA_WITH_IMM);
@@ -463,9 +513,21 @@ void myverbs_wait_recv_rendezvous(struct rdma_context* ctx, void *user_buf, int 
         fprintf(stderr, "Immediate data size mismatch: expected %d, got %u\n", size, imm_size);
         exit(1);
     }
+    if (stats) clock_gettime(CLOCK_MONOTONIC, &t3);
 
     // 6. On-the-fly memory deregistration
     ibv_dereg_mr(recv_mr);
+    if (stats) {
+        clock_gettime(CLOCK_MONOTONIC, &t4);
+        stats->reg_mr_us += (t1.tv_sec - t0.tv_sec) * 1000000.0 + (t1.tv_nsec - t0.tv_nsec) / 1000.0;
+        stats->handshake_us += (t2.tv_sec - t1.tv_sec) * 1000000.0 + (t2.tv_nsec - t1.tv_nsec) / 1000.0;
+        stats->rdma_write_us += (t3.tv_sec - t2.tv_sec) * 1000000.0 + (t3.tv_nsec - t2.tv_nsec) / 1000.0;
+        stats->dereg_mr_us += (t4.tv_sec - t3.tv_sec) * 1000000.0 + (t4.tv_nsec - t3.tv_nsec) / 1000.0;
+    }
+}
+
+void myverbs_wait_recv_rendezvous(struct rdma_context* ctx, void *user_buf, int size) {
+    myverbs_wait_recv_rendezvous_timed(ctx, user_buf, size, NULL);
 }
 
 // =========================================================================
@@ -583,6 +645,9 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
 
     struct timespec start, end;
     for (int size = 1; size <= MAX_DATA_TEST; size *= 2) {
+        struct rz_probe_stats probe_sender = {0};
+        struct rz_probe_stats probe_recv = {0};
+
         // Warmup iterations
         MPI_Barrier(MPI_COMM_WORLD);
         for (int i = 0; i < WARMUP; i++) {
@@ -602,22 +667,33 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
             if (rank == 0) {
                 clock_gettime(CLOCK_MONOTONIC, &start);
 
-                myverbs_send(ctx, user_buff, size);
-                myverbs_recv(ctx, user_buff, size);
+                myverbs_send_rendezvous_timed(ctx, user_buff, size, &probe_sender);
+                myverbs_wait_recv_rendezvous_timed(ctx, user_buff, size, NULL);
 
                 clock_gettime(CLOCK_MONOTONIC, &end);
 
                 double rtt_us = (end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_nsec - start.tv_nsec) / 1000.0;
                 latencies[i] = rtt_us / 2.0;
             } else if (rank == 1) {
-                myverbs_recv(ctx, user_buff, size);
-                myverbs_send(ctx, user_buff, size);
+                myverbs_wait_recv_rendezvous_timed(ctx, user_buff, size, NULL);
+                myverbs_send_rendezvous_timed(ctx, user_buff, size, NULL);
             }
         }
 
         if (rank == 0) {
             double median_lat = compute_median(latencies, ITERATIONS);
             printf("%14d   %12d   %18.2f\n", size, ITERATIONS, median_lat);
+
+            // Print diagnostic probe split for key message sizes (exact 1-way component breakdown)
+            if (size == 1 || size == 64 || size == 4096 || size == 131072 || size == 1048576 || size == 4194304) {
+                double avg_reg = probe_sender.reg_mr_us / (double)ITERATIONS;
+                double avg_handshake = probe_sender.handshake_us / (double)ITERATIONS;
+                double avg_rdma = probe_sender.rdma_write_us / (double)ITERATIONS;
+                double avg_dereg = probe_sender.dereg_mr_us / (double)ITERATIONS;
+                double sum_probe = avg_reg + avg_handshake + avg_rdma + avg_dereg;
+                printf("   [PROBE %7d B] ibv_reg_mr: %6.2fus | Handshake: %6.2fus | RDMA_Write: %6.2fus | ibv_dereg_mr: %6.2fus | Probe Sum: %6.2fus\n",
+                       size, avg_reg, avg_handshake, avg_rdma, avg_dereg, sum_probe);
+            }
         }
     }
     free(user_buff);

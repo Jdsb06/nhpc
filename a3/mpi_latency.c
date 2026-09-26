@@ -6,7 +6,7 @@
 
 #define MAX_SIZE (1024 * 1024 * 4)
 #define ITERATIONS 100
-#define WARMUP 10
+#define WARMUP 20
 
 // Comparison function for qsort (median computation)
 int compare_doubles_mpi(const void *a, const void *b) {
@@ -57,8 +57,12 @@ int main(int argc, char **argv) {
      exit(1);
   }
 
+  // Initial synchronization barrier before warmup
+  MPI_Barrier(MPI_COMM_WORLD);
+
   // Warmup iterations starting from 1 byte
   for (msg_size = 1; msg_size <= MAX_SIZE; msg_size *= 2) {
+    MPI_Barrier(MPI_COMM_WORLD);
     for (i = 0; i < WARMUP; i++) {
        if (rank == src_rank) {
          MPI_Send(src, msg_size, MPI_CHAR, dst_rank, 1, MPI_COMM_WORLD);
@@ -70,7 +74,8 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Measured Benchmark iterations starting from 1 byte with median calculation
+  // Initial synchronization barrier before benchmark
+  MPI_Barrier(MPI_COMM_WORLD);
   for (msg_size = 1; msg_size <= MAX_SIZE; msg_size *= 2) {
     MPI_Barrier(MPI_COMM_WORLD);
 
