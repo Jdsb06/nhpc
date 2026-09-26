@@ -4,7 +4,7 @@
 #include <time.h>
 #include <sys/time.h>
 
-#define MAX_SIZE (1024 * 1024 * 4)
+#define MAX_SIZE (1024 * 1024 * 32)
 #define ITERATIONS 100
 #define WARMUP 20
 

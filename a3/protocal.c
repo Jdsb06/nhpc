@@ -11,7 +11,7 @@
 #define IB_PORT 1
 #define PA_BUFFER_SIZE (128 * 1024)       // 128 KB preallocated buffer chunk size for Eager
 #define EAGER_SLOTS 4                      // 4 preallocated ring-buffer slots for Eager mode
-#define MAX_DATA_TEST (4 * 1024 * 1024)   // 4 MB max test buffer size
+#define MAX_DATA_TEST (32 * 1024 * 1024)   // 32 MB max test buffer size
 #define ITERATIONS 100                     // Iterations per message size
 #define WARMUP 10                          // Warmup iterations
 
