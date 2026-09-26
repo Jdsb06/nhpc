@@ -6,10 +6,11 @@
 #include <mpi.h>
 #include <stdint.h>
 #include <sys/time.h>
+#include <arpa/inet.h>
 
 #define IB_PORT 1
 #define PA_BUFFER_SIZE (128 * 1024)       // 128 KB preallocated buffer chunk size for Eager
-#define MAX_DATA_TEST (4 * 1024 * 1024)   // 4 MB max buffer size for Rendezvous
+#define MAX_DATA_TEST (4 * 1024 * 1024)   // 4 MB max test buffer size
 #define ITERATIONS 100                     // Iterations per message size
 #define WARMUP 10                          // Warmup iterations
 
@@ -25,15 +26,28 @@ struct send_details {
     uint64_t vaddr;
 } __attribute__((packed));
 
+struct rz_handle {
+    uint64_t vaddr;
+    uint32_t rkey;
+    uint32_t size;
+} __attribute__((packed));
+
 struct rdma_context {
     struct ibv_context *ctx;
     struct ibv_pd *pd;
-    struct ibv_cq *cq;
+    struct ibv_cq *send_cq;  // Dedicated Send Completion Queue
+    struct ibv_cq *recv_cq;  // Dedicated Recv Completion Queue
     struct ibv_qp *qp;
     struct ibv_port_attr port_attr;
+    enum transfer_mode mode;
+    int rank;
 
-    void *buf;               // Registered memory buffer
-    struct ibv_mr *mr;       // Memory registration
+    void *eager_buf;         // Pre-allocated 128 KB buffer for Eager mode
+    struct ibv_mr *eager_mr; // Pre-registered MR for Eager mode
+
+    void *ctrl_buf;          // Pre-allocated 4 KB control buffer for Verbs handle exchange
+    struct ibv_mr *ctrl_mr;  // Control MR for Verbs handle exchange
+
     struct send_details remote_info;
 };
 
@@ -84,18 +98,24 @@ struct rdma_context* setup_rdma_hardware() {
         return NULL;
     }
 
-    rdma_ctx->cq = ibv_create_cq(rdma_ctx->ctx, 128, NULL, NULL, 0);
-    if (!rdma_ctx->cq) {
-        fprintf(stderr, "Failed to create CQ\n");
+    rdma_ctx->send_cq = ibv_create_cq(rdma_ctx->ctx, 256, NULL, NULL, 0);
+    if (!rdma_ctx->send_cq) {
+        fprintf(stderr, "Failed to create Send CQ\n");
+        return NULL;
+    }
+
+    rdma_ctx->recv_cq = ibv_create_cq(rdma_ctx->ctx, 256, NULL, NULL, 0);
+    if (!rdma_ctx->recv_cq) {
+        fprintf(stderr, "Failed to create Recv CQ\n");
         return NULL;
     }
 
     struct ibv_qp_init_attr qp_init_attr = {
-        .send_cq = rdma_ctx->cq,
-        .recv_cq = rdma_ctx->cq,
+        .send_cq = rdma_ctx->send_cq,
+        .recv_cq = rdma_ctx->recv_cq,
         .cap = {
-            .max_send_wr  = 128,
-            .max_recv_wr  = 128,
+            .max_send_wr  = 256,
+            .max_recv_wr  = 256,
             .max_send_sge = 1,
             .max_recv_sge = 1,
             .max_inline_data = 0
@@ -133,17 +153,17 @@ void modify_qp_to_init(struct ibv_qp *qp) {
     }
 }
 
-// Transition QP to RTR (Ready To Receive)
-void modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t remote_lid) {
+// Transition QP to RTR using DYNAMIC MTU from query port
+void modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t remote_lid, enum ibv_mtu mtu) {
     struct ibv_qp_attr attr = {
         .qp_state               = IBV_QPS_RTR,
-        .path_mtu               = IBV_MTU_1024,
+        .path_mtu               = mtu, // Dynamic MTU from port attributes
         .dest_qp_num            = remote_qpn,
         .rq_psn                 = 0,
         .max_dest_rd_atomic     = 1,
         .min_rnr_timer          = 12,
         .ah_attr = {
-            .is_global  = 0,
+            .is_global  = 0, // Native InfiniBand subnet (LID-based addressing). Set is_global=1 with GID for RoCE.
             .dlid       = remote_lid,
             .sl         = 0,
             .src_path_bits = 0,
@@ -158,7 +178,7 @@ void modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t remote_li
     }
 }
 
-// Transition QP to RTS (Ready To Send)
+// Transition QP to RTS
 void modify_qp_to_rts(struct ibv_qp *qp) {
     struct ibv_qp_attr attr = {
         .qp_state       = IBV_QPS_RTS,
@@ -176,8 +196,8 @@ void modify_qp_to_rts(struct ibv_qp *qp) {
     }
 }
 
-// Poll Completion Queue for an entry
-void poll_completion(struct ibv_cq *cq) {
+// Poll Completion Queue with Status & Opcode Validation
+struct ibv_wc poll_completion_wc(struct ibv_cq *cq, enum ibv_wc_opcode expected_opcode) {
     struct ibv_wc wc;
     int num_comp;
     do {
@@ -185,9 +205,21 @@ void poll_completion(struct ibv_cq *cq) {
     } while (num_comp == 0);
 
     if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "CQ error: %s (status %d)\n", ibv_wc_status_str(wc.status), wc.status);
+        fprintf(stderr, "CQ error: %s (status %d, wr_id %lu)\n", 
+                ibv_wc_status_str(wc.status), wc.status, (unsigned long)wc.wr_id);
         exit(1);
     }
+
+    if (expected_opcode != (enum ibv_wc_opcode)-1 && wc.opcode != expected_opcode) {
+        fprintf(stderr, "CQ opcode mismatch: expected %d, got %d\n", expected_opcode, wc.opcode);
+        exit(1);
+    }
+
+    return wc;
+}
+
+void poll_completion(struct ibv_cq *cq) {
+    poll_completion_wc(cq, (enum ibv_wc_opcode)-1);
 }
 
 // Post a Receive Request
@@ -230,8 +262,8 @@ void post_send(struct ibv_qp *qp, struct ibv_mr *mr, void *buf, int size, enum i
     }
 }
 
-// Post RDMA Write with Immediate Data
-void post_rdma_write_imm(struct ibv_qp *qp, struct ibv_mr *mr, void *buf, int size, uint64_t remote_addr, uint32_t rkey) {
+// Post RDMA Write with Immediate Data using dynamic MR
+void post_rdma_write_imm_mr(struct ibv_qp *qp, struct ibv_mr *mr, void *buf, int size, uint64_t remote_addr, uint32_t rkey) {
     struct ibv_sge sge = {
         .addr = (uint64_t)buf,
         .length = size,
@@ -242,7 +274,7 @@ void post_rdma_write_imm(struct ibv_qp *qp, struct ibv_mr *mr, void *buf, int si
     wr.num_sge = 1;
     wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
     wr.send_flags = IBV_SEND_SIGNALED;
-    wr.imm_data = size;
+    wr.imm_data = htonl((uint32_t)size); // IB spec requires immediate data in network byte order (htonl)
     wr.wr.rdma.remote_addr = remote_addr;
     wr.wr.rdma.rkey = rkey;
 
@@ -253,33 +285,49 @@ void post_rdma_write_imm(struct ibv_qp *qp, struct ibv_mr *mr, void *buf, int si
     }
 }
 
-// Initialize RDMA Resources and Exchange Handles via MPI Channel Semantics
+// Initialize RDMA Resources and Exchange Setup Details via MPI Bootstrap
 struct rdma_context* myverbs_init(enum transfer_mode mode, int rank) {
     struct rdma_context *ctx = setup_rdma_hardware();
     if (!ctx) {
         MPI_Finalize();
         return NULL;
     }
+    ctx->mode = mode;
+    ctx->rank = rank;
 
-    size_t alloc_size = (mode == MODE_EAGER) ? PA_BUFFER_SIZE : MAX_DATA_TEST;
-    if (posix_memalign(&ctx->buf, 4096, alloc_size) != 0) {
-        perror("posix_memalign failed");
+    // Allocate & register 128 KB bounce buffer for Eager mode
+    if (posix_memalign(&ctx->eager_buf, 4096, PA_BUFFER_SIZE) != 0) {
+        perror("posix_memalign eager_buf failed");
         exit(1);
     }
-    memset(ctx->buf, 0, alloc_size);
+    memset(ctx->eager_buf, 0, PA_BUFFER_SIZE);
 
     int access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
-    ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, alloc_size, access);
-    if (!ctx->mr) {
-        perror("ibv_reg_mr failed");
+    ctx->eager_mr = ibv_reg_mr(ctx->pd, ctx->eager_buf, PA_BUFFER_SIZE, access);
+    if (!ctx->eager_mr) {
+        perror("ibv_reg_mr eager_buf failed");
         exit(1);
     }
 
+    // Allocate & register 4 KB control buffer for Verbs handle exchange
+    if (posix_memalign(&ctx->ctrl_buf, 4096, 4096) != 0) {
+        perror("posix_memalign ctrl_buf failed");
+        exit(1);
+    }
+    memset(ctx->ctrl_buf, 0, 4096);
+
+    ctx->ctrl_mr = ibv_reg_mr(ctx->pd, ctx->ctrl_buf, 4096, access);
+    if (!ctx->ctrl_mr) {
+        perror("ibv_reg_mr ctrl_buf failed");
+        exit(1);
+    }
+
+    // MPI Bootstrap ONLY for QP connection parameters (LID and QPN)
     struct send_details local_info = {
         .lid = ctx->port_attr.lid,
         .qp_num = ctx->qp->qp_num,
-        .rkey = ctx->mr->rkey,
-        .vaddr = (uint64_t)ctx->buf
+        .rkey = 0,
+        .vaddr = 0
     };
 
     if (rank == 0) {
@@ -290,8 +338,9 @@ struct rdma_context* myverbs_init(enum transfer_mode mode, int rank) {
         MPI_Send(&local_info, sizeof(local_info), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
     }
 
+    // Transition QP using DYNAMIC MTU from port attributes
     modify_qp_to_init(ctx->qp);
-    modify_qp_to_rtr(ctx->qp, ctx->remote_info.qp_num, ctx->remote_info.lid);
+    modify_qp_to_rtr(ctx->qp, ctx->remote_info.qp_num, ctx->remote_info.lid, ctx->port_attr.active_mtu);
     modify_qp_to_rts(ctx->qp);
 
     return ctx;
@@ -300,73 +349,146 @@ struct rdma_context* myverbs_init(enum transfer_mode mode, int rank) {
 // Destroy RDMA Context
 void myverbs_destroy(struct rdma_context *ctx) {
     if (!ctx) return;
-    if (ctx->mr) ibv_dereg_mr(ctx->mr);
-    if (ctx->buf) free(ctx->buf);
+    if (ctx->eager_mr) ibv_dereg_mr(ctx->eager_mr);
+    if (ctx->eager_buf) free(ctx->eager_buf);
+    if (ctx->ctrl_mr) ibv_dereg_mr(ctx->ctrl_mr);
+    if (ctx->ctrl_buf) free(ctx->ctrl_buf);
     if (ctx->qp) ibv_destroy_qp(ctx->qp);
-    if (ctx->cq) ibv_destroy_cq(ctx->cq);
+    if (ctx->send_cq) ibv_destroy_cq(ctx->send_cq);
+    if (ctx->recv_cq) ibv_destroy_cq(ctx->recv_cq);
     if (ctx->pd) ibv_dealloc_pd(ctx->pd);
     if (ctx->ctx) ibv_close_device(ctx->ctx);
     free(ctx);
 }
 
-// Pre-post receive buffer (Eager)
+// =========================================================================
+// TASK 1: EAGER PROTOCOL (128 KB Chunking via Pre-Allocated Bounce Buffer)
+// =========================================================================
+
+// Pre-posts receive buffer for the FIRST chunk in Eager transfer
 void myverbs_prepost_recv_eager(struct rdma_context* ctx, int size) {
     int chunk = (size > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : size;
-    post_receive(ctx->qp, ctx->mr, ctx->buf, chunk);
+    post_receive(ctx->qp, ctx->eager_mr, ctx->eager_buf, chunk);
 }
 
-// Pre-post receive buffer (Rendezvous)
-void myverbs_prepost_recv_rendezvous(struct rdma_context* ctx) {
-    post_receive(ctx->qp, ctx->mr, ctx->buf, 0);
-}
-
-// Task 1: Eager Protocol Send
 void myverbs_send_eager(struct rdma_context* ctx, const void *buf, int size) {
     int bytes_sent = 0;
     const char *ptr = (const char *)buf;
 
     while (bytes_sent < size) {
         int chunk = (size - bytes_sent > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - bytes_sent);
-        memcpy(ctx->buf, ptr + bytes_sent, chunk);
-        post_send(ctx->qp, ctx->mr, ctx->buf, chunk, IBV_WR_SEND);
-        poll_completion(ctx->cq);
+        memcpy(ctx->eager_buf, ptr + bytes_sent, chunk);
+        post_send(ctx->qp, ctx->eager_mr, ctx->eager_buf, chunk, IBV_WR_SEND);
+        poll_completion_wc(ctx->send_cq, IBV_WC_SEND);
         bytes_sent += chunk;
     }
 }
 
-// Task 1: Eager Protocol Recv
 void myverbs_wait_recv_eager(struct rdma_context* ctx, void *buf, int size) {
     int bytes_rcv = 0;
     char *ptr = (char *)buf;
     while (bytes_rcv < size) {
         int chunk = (size - bytes_rcv > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - bytes_rcv);
-        if (bytes_rcv > 0) {
-            post_receive(ctx->qp, ctx->mr, ctx->buf, chunk);
-        }
-        poll_completion(ctx->cq);
-        memcpy(ptr + bytes_rcv, ctx->buf, chunk);
+        poll_completion_wc(ctx->recv_cq, IBV_WC_RECV);
+        memcpy(ptr + bytes_rcv, ctx->eager_buf, chunk);
         bytes_rcv += chunk;
+
+        // Post receive WR for next chunk ONLY AFTER copying out current chunk from eager_buf
+        // to prevent hardware DMA overwrite races on shared bounce buffer memory.
+        if (bytes_rcv < size) {
+            int next_chunk = (size - bytes_rcv > PA_BUFFER_SIZE) ? PA_BUFFER_SIZE : (size - bytes_rcv);
+            post_receive(ctx->qp, ctx->eager_mr, ctx->eager_buf, next_chunk);
+        }
     }
 }
 
-// Task 2: Rendezvous Protocol Send
-void myverbs_send_rendezvous(struct rdma_context* ctx, const void *buf, int size) {
-    if (buf != ctx->buf) {
-        memcpy(ctx->buf, buf, size);
+// =========================================================================
+// TASK 2: TRUE ZERO-COPY RENDEZVOUS PROTOCOL
+// (On-The-Fly MR Reg & Verbs Channel Handle Exchange)
+// =========================================================================
+
+// Rendezvous Sender: Registers user_buf on-the-fly, receives remote handle over Verbs, RDMA Writes directly, and deregisters
+void myverbs_send_rendezvous(struct rdma_context* ctx, const void *user_buf, int size) {
+    // 1. On-the-fly memory registration of sender's actual user buffer (ZERO memcpy!)
+    struct ibv_mr *send_mr = ibv_reg_mr(ctx->pd, (void*)user_buf, size, IBV_ACCESS_LOCAL_WRITE);
+    if (!send_mr) {
+        perror("ibv_reg_mr sender on-the-fly failed");
+        exit(1);
     }
-    post_rdma_write_imm(ctx->qp, ctx->mr, ctx->buf, size, ctx->remote_info.vaddr, ctx->remote_info.rkey);
-    poll_completion(ctx->cq);
+
+    // 2. Pre-post receive to receive remote handle (vaddr, rkey) over Verbs Channel Semantics
+    post_receive(ctx->qp, ctx->ctrl_mr, ctx->ctrl_buf, sizeof(struct rz_handle));
+
+    // 3. Wait for receiver's handle message over Verbs Channel
+    poll_completion_wc(ctx->recv_cq, IBV_WC_RECV);
+    struct rz_handle remote_h;
+    memcpy(&remote_h, ctx->ctrl_buf, sizeof(struct rz_handle));
+
+    // 4. Perform TRUE ZERO-COPY RDMA Write with Immediate directly into receiver's user memory
+    post_rdma_write_imm_mr(ctx->qp, send_mr, (void*)user_buf, size, remote_h.vaddr, remote_h.rkey);
+    poll_completion_wc(ctx->send_cq, IBV_WC_RDMA_WRITE); // Wait for RDMA write send completion
+
+    // 5. On-the-fly memory deregistration
+    ibv_dereg_mr(send_mr);
 }
 
-// Task 2: Rendezvous Protocol Recv
-void myverbs_wait_recv_rendezvous(struct rdma_context* ctx, void *buf, int size) {
-    poll_completion(ctx->cq);
-    if (buf != ctx->buf) {
-        memcpy(buf, ctx->buf, size);
+// Rendezvous Receiver: Registers user_buf on-the-fly, sends handle over Verbs, catches RDMA Write, and deregisters
+void myverbs_wait_recv_rendezvous(struct rdma_context* ctx, void *user_buf, int size) {
+    // 1. On-the-fly memory registration of receiver's actual user buffer (ZERO memcpy!)
+    struct ibv_mr *recv_mr = ibv_reg_mr(ctx->pd, user_buf, size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    if (!recv_mr) {
+        perror("ibv_reg_mr receiver on-the-fly failed");
+        exit(1);
+    }
+
+    // 2. Pre-post 0-byte receive request to catch RDMA Write with Immediate notification
+    post_receive(ctx->qp, recv_mr, user_buf, 0);
+
+    // 3. Prepare control handle with receiver's user buffer vaddr and rkey
+    struct rz_handle local_h = {
+        .vaddr = (uint64_t)user_buf,
+        .rkey = recv_mr->rkey,
+        .size = size
+    };
+    memcpy(ctx->ctrl_buf, &local_h, sizeof(struct rz_handle));
+
+    // 4. Send control handle to sender via Verbs Channel Semantics (ibv_post_send)
+    post_send(ctx->qp, ctx->ctrl_mr, ctx->ctrl_buf, sizeof(struct rz_handle), IBV_WR_SEND);
+    poll_completion_wc(ctx->send_cq, IBV_WC_SEND); // Wait for control send completion
+
+    // 5. Wait for sender's RDMA Write with Immediate to complete directly into user_buf
+    struct ibv_wc wc = poll_completion_wc(ctx->recv_cq, IBV_WC_RECV_RDMA_WITH_IMM);
+    uint32_t imm_size = ntohl(wc.imm_data); // Convert from network byte order (ntohl) per IB spec
+    if (imm_size != (uint32_t)size) {
+        fprintf(stderr, "Immediate data size mismatch: expected %d, got %u\n", size, imm_size);
+        exit(1);
+    }
+
+    // 6. On-the-fly memory deregistration
+    ibv_dereg_mr(recv_mr);
+}
+
+// =========================================================================
+// UNIFIED DROP-IN API SURFACE
+// =========================================================================
+
+void myverbs_send(struct rdma_context *ctx, const void *buf, int size) {
+    if (ctx->mode == MODE_EAGER) {
+        myverbs_send_eager(ctx, buf, size);
+    } else {
+        myverbs_send_rendezvous(ctx, buf, size);
     }
 }
 
-// Benchmark Task 1: Eager Protocol (Median Latency)
+void myverbs_recv(struct rdma_context *ctx, void *buf, int size) {
+    if (ctx->mode == MODE_EAGER) {
+        myverbs_wait_recv_eager(ctx, buf, size);
+    } else {
+        myverbs_wait_recv_rendezvous(ctx, buf, size);
+    }
+}
+
+// Benchmark Task 1: Eager Protocol
 void run_task1_eager(int rank, struct rdma_context *ctx) {
     void *user_buff = NULL;
     if (posix_memalign(&user_buff, 4096, MAX_DATA_TEST) != 0) {
@@ -392,17 +514,17 @@ void run_task1_eager(int rank, struct rdma_context *ctx) {
         MPI_Barrier(MPI_COMM_WORLD);
         for (int i = 0; i < WARMUP; i++) {
             if (rank == 0) {
-                myverbs_send_eager(ctx, user_buff, size);
-                myverbs_wait_recv_eager(ctx, user_buff, size);
+                myverbs_send(ctx, user_buff, size);
+                myverbs_recv(ctx, user_buff, size);
                 if (i < WARMUP - 1) myverbs_prepost_recv_eager(ctx, size);
             } else if (rank == 1) {
-                myverbs_wait_recv_eager(ctx, user_buff, size);
+                myverbs_recv(ctx, user_buff, size);
                 if (i < WARMUP - 1) myverbs_prepost_recv_eager(ctx, size);
-                myverbs_send_eager(ctx, user_buff, size);
+                myverbs_send(ctx, user_buff, size);
             }
         }
 
-        // Benchmark iterations with per-iteration nanosecond timing
+        // Benchmark iterations
         myverbs_prepost_recv_eager(ctx, size);
         MPI_Barrier(MPI_COMM_WORLD);
 
@@ -410,8 +532,8 @@ void run_task1_eager(int rank, struct rdma_context *ctx) {
             if (rank == 0) {
                 clock_gettime(CLOCK_MONOTONIC, &start);
 
-                myverbs_send_eager(ctx, user_buff, size);
-                myverbs_wait_recv_eager(ctx, user_buff, size);
+                myverbs_send(ctx, user_buff, size);
+                myverbs_recv(ctx, user_buff, size);
 
                 clock_gettime(CLOCK_MONOTONIC, &end);
 
@@ -422,13 +544,13 @@ void run_task1_eager(int rank, struct rdma_context *ctx) {
                     myverbs_prepost_recv_eager(ctx, size);
                 }
             } else if (rank == 1) {
-                myverbs_wait_recv_eager(ctx, user_buff, size);
+                myverbs_recv(ctx, user_buff, size);
 
                 if (i < ITERATIONS - 1) {
                     myverbs_prepost_recv_eager(ctx, size);
                 }
 
-                myverbs_send_eager(ctx, user_buff, size);
+                myverbs_send(ctx, user_buff, size);
             }
         }
 
@@ -440,7 +562,7 @@ void run_task1_eager(int rank, struct rdma_context *ctx) {
     free(user_buff);
 }
 
-// Benchmark Task 2: Rendezvous Protocol (Median Latency)
+// Benchmark Task 2: Rendezvous Protocol (True Zero-Copy On-the-Fly)
 void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
     void *user_buff = NULL;
     if (posix_memalign(&user_buff, 4096, MAX_DATA_TEST) != 0) {
@@ -453,7 +575,7 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
 
     if (rank == 0) {
         printf("\n=======================================================\n");
-        printf(" Task 2: Rendezvous Protocol Median Latency Benchmark \n");
+        printf(" Task 2: Zero-Copy Rendezvous Median Latency (On-the-Fly)\n");
         printf("=======================================================\n");
         printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)");
         printf("-------------------------------------------------------\n");
@@ -462,47 +584,34 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
     struct timespec start, end;
     for (int size = 1; size <= MAX_DATA_TEST; size *= 2) {
         // Warmup iterations
-        myverbs_prepost_recv_rendezvous(ctx);
         MPI_Barrier(MPI_COMM_WORLD);
         for (int i = 0; i < WARMUP; i++) {
             if (rank == 0) {
-                myverbs_send_rendezvous(ctx, user_buff, size);
-                myverbs_wait_recv_rendezvous(ctx, user_buff, size);
-                if (i < WARMUP - 1) myverbs_prepost_recv_rendezvous(ctx);
+                myverbs_send(ctx, user_buff, size);
+                myverbs_recv(ctx, user_buff, size);
             } else if (rank == 1) {
-                myverbs_wait_recv_rendezvous(ctx, user_buff, size);
-                if (i < WARMUP - 1) myverbs_prepost_recv_rendezvous(ctx);
-                myverbs_send_rendezvous(ctx, user_buff, size);
+                myverbs_recv(ctx, user_buff, size);
+                myverbs_send(ctx, user_buff, size);
             }
         }
 
-        // Benchmark iterations with per-iteration nanosecond timing
-        myverbs_prepost_recv_rendezvous(ctx);
+        // Benchmark iterations
         MPI_Barrier(MPI_COMM_WORLD);
 
         for (int i = 0; i < ITERATIONS; i++) {
             if (rank == 0) {
                 clock_gettime(CLOCK_MONOTONIC, &start);
 
-                myverbs_send_rendezvous(ctx, user_buff, size);
-                myverbs_wait_recv_rendezvous(ctx, user_buff, size);
+                myverbs_send(ctx, user_buff, size);
+                myverbs_recv(ctx, user_buff, size);
 
                 clock_gettime(CLOCK_MONOTONIC, &end);
 
                 double rtt_us = (end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_nsec - start.tv_nsec) / 1000.0;
                 latencies[i] = rtt_us / 2.0;
-
-                if (i < ITERATIONS - 1) {
-                    myverbs_prepost_recv_rendezvous(ctx);
-                }
             } else if (rank == 1) {
-                myverbs_wait_recv_rendezvous(ctx, user_buff, size);
-
-                if (i < ITERATIONS - 1) {
-                    myverbs_prepost_recv_rendezvous(ctx);
-                }
-
-                myverbs_send_rendezvous(ctx, user_buff, size);
+                myverbs_recv(ctx, user_buff, size);
+                myverbs_send(ctx, user_buff, size);
             }
         }
 
@@ -516,12 +625,13 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
 
 int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
-    int rank, size;
+    int rank, comm_size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
 
-    if (size < 2) {
-        if (rank == 0) fprintf(stderr, "This benchmark requires at least 2 MPI processes.\n");
+    // Enforce strict check for 2 ranks
+    if (comm_size != 2) {
+        if (rank == 0) fprintf(stderr, "This benchmark requires exactly 2 MPI processes.\n");
         MPI_Finalize();
         return 1;
     }
@@ -534,7 +644,7 @@ int main(int argc, char *argv[]) {
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    // Run Task 2: Rendezvous Protocol
+    // Run Task 2: Rendezvous Protocol (True Zero-Copy On-the-Fly & Verbs Handle Exchange)
     struct rdma_context *ctx_rv = myverbs_init(MODE_RENDEZVOUS, rank);
     MPI_Barrier(MPI_COMM_WORLD);
     run_task2_rendezvous(rank, ctx_rv);
