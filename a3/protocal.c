@@ -11,7 +11,7 @@
 #define IB_PORT 1
 #define PA_BUFFER_SIZE (128 * 1024)       // 128 KB preallocated buffer chunk size for Eager
 #define EAGER_SLOTS 4                      // 4 preallocated ring-buffer slots for Eager mode
-#define MAX_DATA_TEST (32 * 1024 * 1024)   // 32 MB max test buffer size
+#define MAX_DATA_TEST (128 * 1024 * 1024)  // 128 MB max test buffer size
 #define ITERATIONS 100                     // Iterations per message size
 #define WARMUP 10                          // Warmup iterations
 
@@ -562,11 +562,11 @@ void run_task1_eager(int rank, struct rdma_context *ctx) {
     double latencies[ITERATIONS];
 
     if (rank == 0) {
-        printf("\n=======================================================\n");
-        printf("   Task 1: Eager Protocol Median Latency Benchmark    \n");
-        printf("=======================================================\n");
-        printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)");
-        printf("-------------------------------------------------------\n");
+        printf("\n=======================================================================\n");
+        printf("   Task 1: Eager Protocol Median Latency & Bandwidth Benchmark         \n");
+        printf("=======================================================================\n");
+        printf("%14s   %12s   %18s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)", "Bandwidth (MB/s)");
+        printf("-----------------------------------------------------------------------\n");
     }
 
     struct timespec start, end;
@@ -618,7 +618,8 @@ void run_task1_eager(int rank, struct rdma_context *ctx) {
 
         if (rank == 0) {
             double median_lat = compute_median(latencies, ITERATIONS);
-            printf("%14d   %12d   %18.2f\n", size, ITERATIONS, median_lat);
+            double bw_mbps = (double)size / median_lat;
+            printf("%14d   %12d   %18.2f   %18.2f\n", size, ITERATIONS, median_lat, bw_mbps);
         }
     }
     free(user_buff);
@@ -636,11 +637,11 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
     double latencies[ITERATIONS];
 
     if (rank == 0) {
-        printf("\n=======================================================\n");
-        printf(" Task 2: Zero-Copy Rendezvous Median Latency (On-the-Fly)\n");
-        printf("=======================================================\n");
-        printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)");
-        printf("-------------------------------------------------------\n");
+        printf("\n=======================================================================\n");
+        printf(" Task 2: Zero-Copy Rendezvous Latency & Bandwidth (On-the-Fly)\n");
+        printf("=======================================================================\n");
+        printf("%14s   %12s   %18s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)", "Bandwidth (MB/s)");
+        printf("-----------------------------------------------------------------------\n");
     }
 
     struct timespec start, end;
@@ -690,10 +691,11 @@ void run_task2_rendezvous(int rank, struct rdma_context *ctx) {
 
         if (rank == 0) {
             double median_lat = compute_median(latencies, ITERATIONS);
-            printf("%14d   %12d   %18.2f\n", size, ITERATIONS, median_lat);
+            double bw_mbps = (double)size / median_lat;
+            printf("%14d   %12d   %18.2f   %18.2f\n", size, ITERATIONS, median_lat, bw_mbps);
 
             // Print diagnostic probe split for key message sizes (exact 1-way median component breakdown)
-            if (size == 1 || size == 64 || size == 4096 || size == 131072 || size == 1048576 || size == 4194304) {
+            if (size == 1 || size == 64 || size == 4096 || size == 131072 || size == 1048576 || size == 4194304 || size == 16777216 || size == 33554432 || size == 67108864 || size == 134217728) {
                 double median_reg = compute_median(probe_reg, ITERATIONS);
                 double median_handshake = compute_median(probe_handshake, ITERATIONS);
                 double median_rdma = compute_median(probe_rdma, ITERATIONS);

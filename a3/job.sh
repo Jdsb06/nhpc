@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -N rdma_mpi_bench
 #PBS -l nodes=2:ppn=1
-#PBS -l walltime=00:10:00
+#PBS -l walltime=00:15:00
 #PBS -j oe
 #PBS -V
 

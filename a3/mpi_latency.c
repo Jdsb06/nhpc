@@ -4,7 +4,7 @@
 #include <time.h>
 #include <sys/time.h>
 
-#define MAX_SIZE (1024 * 1024 * 32)
+#define MAX_SIZE (1024 * 1024 * 128)
 #define ITERATIONS 100
 #define WARMUP 20
 
@@ -43,11 +43,11 @@ int main(int argc, char **argv) {
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   if (rank == src_rank) {
-    printf("\n=======================================================\n");
-    printf("    Unmodified MPI Median Latency Benchmark            \n");
-    printf("=======================================================\n");
-    printf("%14s   %12s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)");
-    printf("-------------------------------------------------------\n");
+    printf("\n=======================================================================\n");
+    printf("    Unmodified MPI Median Latency & Bandwidth Benchmark                \n");
+    printf("=======================================================================\n");
+    printf("%14s   %12s   %18s   %18s\n", "Size (bytes)", "Iterations", "Median Latency (us)", "Bandwidth (MB/s)");
+    printf("-----------------------------------------------------------------------\n");
   }
 
   src = (char *)malloc(MAX_SIZE);
@@ -99,7 +99,8 @@ int main(int argc, char **argv) {
 
     if (rank == src_rank) {
       double median_lat = compute_median_mpi(latencies, ITERATIONS);
-      printf("%14d   %12d   %18.2f\n", msg_size, ITERATIONS, median_lat);
+      double bandwidth_mbps = (double)msg_size / median_lat;
+      printf("%14d   %12d   %18.2f   %18.2f\n", msg_size, ITERATIONS, median_lat, bandwidth_mbps);
     }
   }
 
