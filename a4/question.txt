@@ -1,0 +1,6 @@
+Improve MPI_allreduce performance on single node using shared memory and OpenMP
+The assignment is to first measure MPI_Allreduce on the compute node for message sizes from 1MB to 64MB using 2 and 4 MPI ranks. All runs are within a single node. You can keep the assumptions simple such as only integers, MPI_SUM and only global communication (MPI_COMM_WORLD). Focus should more on the optimization.
+
+Next, you can implement your own my_mpi_allreduce function in the same code and use shared memory and openmp threads to accelerate the memory copies as well as the reduction operation by leveraging few or all the cores in the system. You should run one iteration of MPI_Allreduce and one iteration of my_mpi_allreduce (use different destination buffers) and ensure the correctness works by doing memcmp.
+
+Next, you can move to performance and you should report the time taken for MPI_allreduce and my_mpi_allreduct for 1MB to 64MB and demonstrate that the numbers you get are better than what is measured by MPI_Allreduce. Repeat the same activity for 2 and 4 MPI ranks.

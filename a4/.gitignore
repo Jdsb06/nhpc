@@ -1,0 +1,4 @@
+allreduce
+__pycache__/
+results/
+pbs.log
