@@ -35,16 +35,17 @@ def summarize(directory):
         raise ValueError("Both 2-rank and 4-rank measurements are required")
     fields = ["ranks", "threads", "bytes", "mpi_us", "custom_us", "speedup", "memcmp"]
     with (directory / "all_configurations.csv").open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer = csv.DictWriter(stream, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     lines = ["# Assignment 4 measured results", "",
              "Times are median trial means in microseconds per call; each trial uses "
              "the slowest rank. Speedup = MPI time / custom time.", "",
-             "A fixed thread count is selected for each rank count by the geometric "
-             "mean speedup over all seven sizes. This is exploratory tuning on the "
-             "same measurements, not an independent validation run. All configurations "
-             "remain in `all_configurations.csv`.", ""]
+             "When multiple thread counts are present, the summary selects one fixed "
+             "count per rank count by geometric mean speedup over all seven sizes. "
+             "That selection is exploratory tuning on the same measurements. A run "
+             "with one configuration per rank count simply reports those fixed "
+             "configurations. All measurements remain in `all_configurations.csv`.", ""]
     for ranks in (2, 4):
         configurations = {}
         for row in rows:

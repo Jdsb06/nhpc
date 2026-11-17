@@ -1,0 +1,2 @@
+mpicc -O3 -march=native -std=c11 -Wall -Wextra -Wpedantic -fopenmp allreduce.c -o allreduce
+/var/spool/pbs/mom_priv/jobs/30815.master.local.SC: line 68: python3: command not found

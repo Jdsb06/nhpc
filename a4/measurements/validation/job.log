@@ -1,0 +1,3 @@
+make: Nothing to be done for `all'.
+Python 3 is unavailable here. Run on the login node: python3 summarize.py results/20261117_175729_30819.master.local
+Completed: /home/student4/IMT2024022/a4/results/20261117_175729_30819.master.local

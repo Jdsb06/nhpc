@@ -1,0 +1,53 @@
+Host=compute02.local ranks=2 threads_per_rank=8 iterations=20 trials=7
+MPI=Intel(R) MPI Library 2018 Update 2 for Linux* OS
+
+sample ranks=2 threads=8 bytes=1048576 trial=0 mpi_us=429.654121 custom_us=159.347057
+sample ranks=2 threads=8 bytes=1048576 trial=1 mpi_us=398.242474 custom_us=138.449669
+sample ranks=2 threads=8 bytes=1048576 trial=2 mpi_us=427.651405 custom_us=160.443783
+sample ranks=2 threads=8 bytes=1048576 trial=3 mpi_us=399.804115 custom_us=136.089325
+sample ranks=2 threads=8 bytes=1048576 trial=4 mpi_us=424.253941 custom_us=161.993504
+sample ranks=2 threads=8 bytes=1048576 trial=5 mpi_us=389.397144 custom_us=140.857697
+sample ranks=2 threads=8 bytes=1048576 trial=6 mpi_us=423.908234 custom_us=163.948536
+sample ranks=2 threads=8 bytes=2097152 trial=0 mpi_us=841.796398 custom_us=285.851955
+sample ranks=2 threads=8 bytes=2097152 trial=1 mpi_us=818.002224 custom_us=284.302235
+sample ranks=2 threads=8 bytes=2097152 trial=2 mpi_us=836.694241 custom_us=294.840336
+sample ranks=2 threads=8 bytes=2097152 trial=3 mpi_us=823.056698 custom_us=270.104408
+sample ranks=2 threads=8 bytes=2097152 trial=4 mpi_us=835.490227 custom_us=300.502777
+sample ranks=2 threads=8 bytes=2097152 trial=5 mpi_us=820.291042 custom_us=292.348862
+sample ranks=2 threads=8 bytes=2097152 trial=6 mpi_us=835.704803 custom_us=297.951698
+sample ranks=2 threads=8 bytes=4194304 trial=0 mpi_us=1830.351353 custom_us=556.504726
+sample ranks=2 threads=8 bytes=4194304 trial=1 mpi_us=1824.903488 custom_us=541.448593
+sample ranks=2 threads=8 bytes=4194304 trial=2 mpi_us=1829.302311 custom_us=560.998917
+sample ranks=2 threads=8 bytes=4194304 trial=3 mpi_us=1829.993725 custom_us=563.299656
+sample ranks=2 threads=8 bytes=4194304 trial=4 mpi_us=1803.004742 custom_us=562.143326
+sample ranks=2 threads=8 bytes=4194304 trial=5 mpi_us=1826.059818 custom_us=561.654568
+sample ranks=2 threads=8 bytes=4194304 trial=6 mpi_us=1806.747913 custom_us=561.904907
+sample ranks=2 threads=8 bytes=8388608 trial=0 mpi_us=6182.050705 custom_us=1300.954819
+sample ranks=2 threads=8 bytes=8388608 trial=1 mpi_us=6140.708923 custom_us=1329.052448
+sample ranks=2 threads=8 bytes=8388608 trial=2 mpi_us=6168.353558 custom_us=1275.396347
+sample ranks=2 threads=8 bytes=8388608 trial=3 mpi_us=6171.560287 custom_us=1305.592060
+sample ranks=2 threads=8 bytes=8388608 trial=4 mpi_us=6146.395206 custom_us=1294.744015
+sample ranks=2 threads=8 bytes=8388608 trial=5 mpi_us=6163.096428 custom_us=1281.809807
+sample ranks=2 threads=8 bytes=8388608 trial=6 mpi_us=6155.300140 custom_us=1333.498955
+sample ranks=2 threads=8 bytes=16777216 trial=0 mpi_us=14694.249630 custom_us=3346.550465
+sample ranks=2 threads=8 bytes=16777216 trial=1 mpi_us=14762.449265 custom_us=3415.846825
+sample ranks=2 threads=8 bytes=16777216 trial=2 mpi_us=14617.204666 custom_us=3373.301029
+sample ranks=2 threads=8 bytes=16777216 trial=3 mpi_us=14567.053318 custom_us=3313.755989
+sample ranks=2 threads=8 bytes=16777216 trial=4 mpi_us=14564.251900 custom_us=3526.902199
+sample ranks=2 threads=8 bytes=16777216 trial=5 mpi_us=14633.202553 custom_us=3390.502930
+sample ranks=2 threads=8 bytes=16777216 trial=6 mpi_us=14561.247826 custom_us=3436.446190
+sample ranks=2 threads=8 bytes=33554432 trial=0 mpi_us=36913.049221 custom_us=7461.452484
+sample ranks=2 threads=8 bytes=33554432 trial=1 mpi_us=35093.653202 custom_us=7606.899738
+sample ranks=2 threads=8 bytes=33554432 trial=2 mpi_us=34860.694408 custom_us=7448.208332
+sample ranks=2 threads=8 bytes=33554432 trial=3 mpi_us=34944.701195 custom_us=7761.144638
+sample ranks=2 threads=8 bytes=33554432 trial=4 mpi_us=34720.301628 custom_us=7453.656197
+sample ranks=2 threads=8 bytes=33554432 trial=5 mpi_us=34635.901451 custom_us=7376.396656
+sample ranks=2 threads=8 bytes=33554432 trial=6 mpi_us=34726.560116 custom_us=7446.956635
+sample ranks=2 threads=8 bytes=67108864 trial=0 mpi_us=86141.097546 custom_us=15330.708027
+sample ranks=2 threads=8 bytes=67108864 trial=1 mpi_us=83938.848972 custom_us=15812.098980
+sample ranks=2 threads=8 bytes=67108864 trial=2 mpi_us=83959.949017 custom_us=15304.291248
+sample ranks=2 threads=8 bytes=67108864 trial=3 mpi_us=83951.354027 custom_us=15735.995770
+sample ranks=2 threads=8 bytes=67108864 trial=4 mpi_us=83936.440945 custom_us=15497.004986
+sample ranks=2 threads=8 bytes=67108864 trial=5 mpi_us=83750.450611 custom_us=15632.605553
+sample ranks=2 threads=8 bytes=67108864 trial=6 mpi_us=83800.101280 custom_us=15707.504749
+All correctness checks passed.

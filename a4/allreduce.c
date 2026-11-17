@@ -91,7 +91,7 @@ static void my_mpi_allreduce(const int *restrict source,
     /* Worker threads copy and add; only the main thread calls MPI. */
     #pragma omp parallel num_threads(ctx->threads)
     {
-        #pragma omp for simd schedule(static)
+        #pragma omp for schedule(static)
         for (size_t i = 0; i < count; ++i) local[i] = source[i];
         #pragma omp master
         { synchronize(ctx); }
@@ -99,12 +99,12 @@ static void my_mpi_allreduce(const int *restrict source,
 
         /* Each rank adds its own chunk. These loops also allow SIMD. */
         if (ctx->ranks == 2) {
-            #pragma omp for simd schedule(static)
+            #pragma omp for schedule(static)
             for (size_t i = begin; i < end; ++i) sum[i] = a[i] + b[i];
         } else if (ctx->ranks == 4) {
             const int *restrict c = ctx->inputs[2];
             const int *restrict d = ctx->inputs[3];
-            #pragma omp for simd schedule(static)
+            #pragma omp for schedule(static)
             for (size_t i = begin; i < end; ++i)
                 sum[i] = a[i] + b[i] + c[i] + d[i];
         } else {
@@ -119,7 +119,7 @@ static void my_mpi_allreduce(const int *restrict source,
         #pragma omp master
         { synchronize(ctx); }
         #pragma omp barrier
-        #pragma omp for simd schedule(static)
+        #pragma omp for schedule(static)
         for (size_t i = 0; i < count; ++i) destination[i] = sum[i];
     }
     /* The next call's first barrier waits for these output copies to finish. */
@@ -136,7 +136,7 @@ static void finalize(allreduce_context *ctx)
 
 static void fill(int *source, size_t count, int rank, int pattern)
 {
-    #pragma omp parallel for simd schedule(static)
+    #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < count; ++i)
         source[i] = ((int)(i % 251) - 125) * (rank + 1) + pattern;
 }
@@ -240,7 +240,7 @@ int main(int argc, char **argv)
         size_t count = bytes / sizeof(int);
         fill(source, count, ctx.rank, (int)(bytes / (1024 * 1024)));
         /* Initialize both outputs with the same threads before timing. */
-        #pragma omp parallel for simd schedule(static)
+        #pragma omp parallel for schedule(static)
         for (size_t i = 0; i < count; ++i) reference[i] = custom[i] = 0;
         verify(source, reference, custom, count, &ctx);
         for (int warmup = 0; warmup < 5; ++warmup) {
